@@ -1,4 +1,7 @@
+from unittest.mock import AsyncMock, Mock
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
+
 from app.main import app
 
 client = TestClient(app)
@@ -32,3 +35,27 @@ def test_chat_rejects_question_over_max_length() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_chat_returns_mocked_model_response(monkeypatch) -> None:
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(
+        return_value=AIMessage(content="RAG 是检索增强生成。")
+    )
+
+    monkeypatch.setattr(
+        "app.api.routes.chat.get_llm",
+        lambda: mock_llm,
+    )
+
+    response = client.post(
+        "/api/v1/chat",
+        json={"question": "什么是 RAG？"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "RAG 是检索增强生成。",
+        "model": "qwen-plus",
+    }
+    mock_llm.ainvoke.assert_awaited_once()
