@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.core.config import get_settings
 from app.schemas.chat import ChatResponse, ChatRequest
@@ -16,7 +17,17 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 @router.post("",response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     try:
-        response = await get_llm().ainvoke(request.question)
+        messages = [
+            SystemMessage(
+                content=(
+                    "你是一名 AI 技术研究助手。"
+                    "请准确、简洁地回答用户问题；"
+                    "不确定时应明确说明，不要编造信息。"
+                )
+            ),
+            HumanMessage(content=request.question)
+        ]
+        response = await get_llm().ainvoke(messages)
     except AuthenticationError as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
