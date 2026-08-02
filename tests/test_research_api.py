@@ -1,6 +1,11 @@
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
+
+from openai import AuthenticationError
+
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -46,4 +51,44 @@ def test_research_plan_returns_mocked_plan(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == plan.model_dump()
+    mock_generate_plan.assert_awaited_once_with("Agentic RAG")
+
+
+def test_research_plan_uses_global_model_error_handler(
+        monkeypatch,
+) -> None:
+    upstream_request = httpx.Request(
+        method="POST",
+        url="https://model.example.com/chat",
+    )
+    upstream_response = httpx.Response(
+        status_code=401,
+        request=upstream_request,
+    )
+    authentication_error = AuthenticationError(
+        "Invalid API key",
+        response=upstream_response,
+        body=None,
+    )
+
+    mock_generate_plan = AsyncMock(
+        side_effect=authentication_error,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.research.generate_research_plan",
+        mock_generate_plan,
+    )
+
+    response = client.post(
+        "/api/v1/research/plan",
+        json={"topic": "Agentic RAG"},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "MODEL_AUTHENTICATION_FAILED",
+            "message": "Model service authentication failed",
+        }
+    }
     mock_generate_plan.assert_awaited_once_with("Agentic RAG")
