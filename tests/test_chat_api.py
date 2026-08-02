@@ -129,7 +129,10 @@ def test_chat_maps_authentication_error_to_502(monkeypatch) -> None:
 
     assert response.status_code == 502
     assert response.json() == {
-        "detail": "Model service authentication failed"
+        "error": {
+            "code": "MODEL_AUTHENTICATION_FAILED",
+            "message": "Model service authentication failed",
+        }
     }
     mock_llm.ainvoke.assert_awaited_once()
 
@@ -166,12 +169,20 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
 
     assert response.status_code == 503
     assert response.json() == {
-        "detail": "Model service is temporarily busy"
+        "error": {
+            "code": "MODEL_RATE_LIMITED",
+            "message": "Model service is temporarily busy",
+        }
     }
     mock_llm.ainvoke.assert_awaited_once()
 
 @pytest.mark.parametrize(
-    ("model_error", "expected_status", "expected_detail"),
+    (
+        "model_error",
+        "expected_status",
+        "expected_code",
+        "expected_message",
+    ),
     [
         (
             APITimeoutError(
@@ -181,6 +192,7 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
                 )
             ),
             504,
+            "MODEL_TIMEOUT",
             "Model service timed out",
         ),
         (
@@ -191,6 +203,7 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
                 )
             ),
             503,
+            "MODEL_CONNECTION_FAILED",
             "Unable to connect to model service",
         ),
         (
@@ -206,6 +219,7 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
                 body=None,
             ),
             502,
+            "MODEL_SERVICE_ERROR",
             "Model service returned an error",
         ),
     ],
@@ -214,7 +228,8 @@ def test_chat_maps_model_errors(
     monkeypatch,
     model_error: Exception,
     expected_status: int,
-    expected_detail: str,
+    expected_code: str,
+    expected_message: str,
 ) -> None:
     mock_llm = Mock()
     mock_llm.ainvoke = AsyncMock(side_effect=model_error)
@@ -230,5 +245,10 @@ def test_chat_maps_model_errors(
     )
 
     assert response.status_code == expected_status
-    assert response.json() == {"detail": expected_detail}
+    assert response.json() == {
+          "error": {
+              "code": expected_code,
+              "message": expected_message,
+          }
+    }
     mock_llm.ainvoke.assert_awaited_once()
