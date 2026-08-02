@@ -2,6 +2,9 @@ from fastapi import FastAPI
 
 from app.api.routes.chat import router as chat_router
 from app.api.routes.research import router as research_router
+from app.core.logging import configure_logging
+
+configure_logging()
 app = FastAPI(
     title="DeepResearch Agent API",
     version="0.1.0",
