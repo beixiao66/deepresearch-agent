@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         "ERROR",
         "CRITICAL",
     ] = "INFO"
+    database_url: str = "sqlite+aiosqlite:///./data/deepresearch.db"
 
 @lru_cache
 def get_settings() -> Settings:
