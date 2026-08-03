@@ -6,6 +6,13 @@ from app.repositories.knowledge_base import (
 )
 from app.schemas.knowledge_base import KnowledgeBaseCreate
 
+from sqlalchemy.exc import IntegrityError
+
+from app.core.exceptions import (
+    KnowledgeBaseNameConflictError,
+    KnowledgeBaseNotFoundError,
+)
+
 
 class KnowledgeBaseService:
     def __init__(
@@ -26,6 +33,11 @@ class KnowledgeBaseService:
                 description=data.description,
             )
             await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise KnowledgeBaseNameConflictError(
+                data.name
+            ) from exc
         except Exception:
             await self.session.rollback()
             raise
@@ -38,7 +50,14 @@ class KnowledgeBaseService:
     async def get_by_id(
             self,
             knowledge_base_id: int,
-    ) -> KnowledgeBase | None:
-        return await self.repository.get_by_id(
+    ) -> KnowledgeBase:
+        knowledge_base = await self.repository.get_by_id(
             knowledge_base_id
         )
+
+        if knowledge_base is None:
+            raise KnowledgeBaseNotFoundError(
+                knowledge_base_id
+            )
+
+        return knowledge_base
