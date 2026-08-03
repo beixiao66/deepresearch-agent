@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.api.routes.chat import router as chat_router
 from app.api.routes.research import router as research_router
+from app.api.routes.knowledge_base import router as knowledge_base_router
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.db.init_db import init_db
@@ -32,6 +33,7 @@ register_exception_handlers(app)
 
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(research_router, prefix="/api/v1")
+app.include_router(knowledge_base_router,prefix="/api/v1",)
 
 
 @app.get("/health")
