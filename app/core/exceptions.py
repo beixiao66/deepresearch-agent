@@ -23,6 +23,22 @@ class ErrorMapping:
     message: str
 
 
+class KnowledgeBaseNotFoundError(Exception):
+    def __init__(self, knowledge_base_id: int) -> None:
+        self.knowledge_base_id = knowledge_base_id
+        super().__init__(
+            f"Knowledge base not found: {knowledge_base_id}"
+        )
+
+
+class KnowledgeBaseNameConflictError(Exception):
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(
+            f"Knowledge base name already exists: {name}"
+        )
+
+
 MODEL_ERROR_MAPPINGS: list[tuple[type[Exception], ErrorMapping]] = [
     (
         AuthenticationError,
@@ -109,3 +125,57 @@ def register_exception_handlers(app: FastAPI) -> None:
             error_type,
             handle_model_service_error,
         )
+
+    app.add_exception_handler(
+        KnowledgeBaseNotFoundError,
+        handle_knowledge_base_not_found,
+    )
+    app.add_exception_handler(
+        KnowledgeBaseNameConflictError,
+        handle_knowledge_base_name_conflict,
+    )
+
+
+async def handle_knowledge_base_not_found(
+        request: Request,
+        exc: KnowledgeBaseNotFoundError,
+) -> JSONResponse:
+    logger.info(
+        "Knowledge base not found: id=%d, path=%s",
+        exc.knowledge_base_id,
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="KNOWLEDGE_BASE_NOT_FOUND",
+            message="Knowledge base not found",
+        )
+    )
+
+    return JSONResponse(
+        status_code=404,
+        content=error_response.model_dump(),
+    )
+
+
+async def handle_knowledge_base_name_conflict(
+        request: Request,
+        exc: KnowledgeBaseNameConflictError,
+) -> JSONResponse:
+    logger.warning(
+        "Knowledge base name conflict: path=%s",
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="KNOWLEDGE_BASE_NAME_CONFLICT",
+            message="Knowledge base name already exists",
+        )
+    )
+
+    return JSONResponse(
+        status_code=409,
+        content=error_response.model_dump(),
+    )
