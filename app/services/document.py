@@ -62,3 +62,22 @@ class DocumentService:
             raise
 
         return document
+
+    async def list_by_knowledge_base(
+            self,
+            knowledge_base_id: int,
+    ) -> list[Document]:
+        knowledge_base = (
+            await self.knowledge_base_repository.get_by_id(
+                knowledge_base_id
+            )
+        )
+
+        if knowledge_base is None:
+            raise KnowledgeBaseNotFoundError(
+                knowledge_base_id
+            )
+
+        return await self.document_repository.list_by_knowledge_base(
+            knowledge_base_id
+        )
