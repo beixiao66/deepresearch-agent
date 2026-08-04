@@ -149,3 +149,9 @@ class FileStorageService:
             await anyio.to_thread.run_sync(
                 path.unlink
             )
+
+    async def remove(self, storage_path: str) -> None:
+        resolved_path = Path(storage_path).resolve()
+
+        self._ensure_path_is_allowed(resolved_path)
+        await self._remove_file_if_exists(resolved_path)
