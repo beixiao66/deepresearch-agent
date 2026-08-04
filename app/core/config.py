@@ -23,6 +23,9 @@ class Settings(BaseSettings):
         "CRITICAL",
     ] = "INFO"
     database_url: str = "sqlite+aiosqlite:///./data/deepresearch.db"
+    upload_directory: str = "data/uploads"
+    max_upload_size: int = 10 * 1024 * 1024
+    upload_chunk_size: int = 1024 * 1024
 
 @lru_cache
 def get_settings() -> Settings:
