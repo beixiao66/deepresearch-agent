@@ -39,6 +39,37 @@ class KnowledgeBaseNameConflictError(Exception):
         )
 
 
+class UnsupportedDocumentTypeError(Exception):
+    def __init__(self, file_extension: str) -> None:
+        self.file_extension = file_extension
+        super().__init__(
+            f"Unsupported document type: {file_extension}"
+        )
+
+
+class EmptyDocumentError(Exception):
+    pass
+
+
+class DocumentTooLargeError(Exception):
+    def __init__(
+            self,
+            max_file_size: int,
+    ) -> None:
+        self.max_file_size = max_file_size
+        super().__init__(
+            f"Document exceeds maximum size: {max_file_size}"
+        )
+
+
+class DocumentNotFoundError(Exception):
+    def __init__(self, document_id: int) -> None:
+        self.document_id = document_id
+        super().__init__(
+            f"Document not found: {document_id}"
+        )
+
+
 MODEL_ERROR_MAPPINGS: list[tuple[type[Exception], ErrorMapping]] = [
     (
         AuthenticationError,
@@ -135,6 +166,24 @@ def register_exception_handlers(app: FastAPI) -> None:
         handle_knowledge_base_name_conflict,
     )
 
+    app.add_exception_handler(
+        UnsupportedDocumentTypeError,
+        handle_unsupported_document_type,
+    )
+    app.add_exception_handler(
+        EmptyDocumentError,
+        handle_empty_document,
+    )
+    app.add_exception_handler(
+        DocumentTooLargeError,
+        handle_document_too_large,
+    )
+
+    app.add_exception_handler(
+        DocumentNotFoundError,
+        handle_document_not_found,
+    )
+
 
 async def handle_knowledge_base_not_found(
         request: Request,
@@ -177,5 +226,96 @@ async def handle_knowledge_base_name_conflict(
 
     return JSONResponse(
         status_code=409,
+        content=error_response.model_dump(),
+    )
+
+
+async def handle_unsupported_document_type(
+        request: Request,
+        exc: UnsupportedDocumentTypeError,
+) -> JSONResponse:
+    logger.info(
+        "Unsupported document type: extension=%s, path=%s",
+        exc.file_extension,
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="UNSUPPORTED_DOCUMENT_TYPE",
+            message="Only PDF, Markdown, and TXT files are supported",
+        )
+    )
+
+    return JSONResponse(
+        status_code=415,
+        content=error_response.model_dump(),
+    )
+
+
+async def handle_empty_document(
+        request: Request,
+        _exc: EmptyDocumentError,
+) -> JSONResponse:
+    logger.info(
+        "Empty document rejected: path=%s",
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="EMPTY_DOCUMENT",
+            message="Uploaded document must not be empty",
+        )
+    )
+
+    return JSONResponse(
+        status_code=400,
+        content=error_response.model_dump(),
+    )
+
+
+async def handle_document_too_large(
+        request: Request,
+        exc: DocumentTooLargeError,
+) -> JSONResponse:
+    logger.info(
+        "Document too large: max_size=%d, path=%s",
+        exc.max_file_size,
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="DOCUMENT_TOO_LARGE",
+            message="Uploaded document exceeds the size limit",
+        )
+    )
+
+    return JSONResponse(
+        status_code=413,
+        content=error_response.model_dump(),
+    )
+
+
+async def handle_document_not_found(
+        request: Request,
+        exc: DocumentNotFoundError,
+) -> JSONResponse:
+    logger.info(
+        "Document not found: id=%d, path=%s",
+        exc.document_id,
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="DOCUMENT_NOT_FOUND",
+            message="Document not found",
+        )
+    )
+
+    return JSONResponse(
+        status_code=404,
         content=error_response.model_dump(),
     )
