@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from app import models
 from app.db.base import Base
 from app.models.knowledge_base import KnowledgeBase
 
