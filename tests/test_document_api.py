@@ -10,6 +10,7 @@ from app.core.exceptions import (
     EmptyDocumentError,
     KnowledgeBaseNotFoundError,
     UnsupportedDocumentTypeError,
+    DocumentNotFoundError,
 )
 from app.main import app
 from app.models.document import Document, DocumentStatus
@@ -182,3 +183,41 @@ def test_list_documents_returns_200() -> None:
     finally:
         clear_dependency_overrides()
 
+
+def test_delete_document_returns_204() -> None:
+    service = Mock()
+    service.delete_document = AsyncMock()
+    client = create_client_with_service(service)
+
+    try:
+        response = client.delete(
+            "/api/v1/knowledge-bases/1/documents/1"
+        )
+
+        assert response.status_code == 204
+        service.delete_document.assert_awaited_once_with(
+            knowledge_base_id=1,
+            document_id=1,
+        )
+    finally:
+        clear_dependency_overrides()
+
+
+def test_delete_document_returns_404() -> None:
+    service = Mock()
+    service.delete_document = AsyncMock(
+        side_effect=DocumentNotFoundError(999)
+    )
+    client = create_client_with_service(service)
+
+    try:
+        response = client.delete(
+            "/api/v1/knowledge-bases/1/documents/999"
+        )
+
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == (
+            "DOCUMENT_NOT_FOUND"
+        )
+    finally:
+        clear_dependency_overrides()

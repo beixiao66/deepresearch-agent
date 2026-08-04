@@ -51,3 +51,21 @@ async def list_documents(
         DocumentResponse.model_validate(document)
         for document in documents
     ]
+
+
+@router.delete(
+      "/{document_id}",
+      status_code=status.HTTP_204_NO_CONTENT,
+  )
+async def delete_document(
+    knowledge_base_id: int = Path(gt=0),
+    document_id: int = Path(gt=0),
+    document_service: Annotated[
+        DocumentService,
+        Depends(get_document_service),
+    ] = None,
+) -> None:
+    await document_service.delete_document(
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+    )

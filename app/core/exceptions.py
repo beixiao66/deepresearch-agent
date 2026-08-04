@@ -62,6 +62,14 @@ class DocumentTooLargeError(Exception):
         )
 
 
+class DocumentNotFoundError(Exception):
+    def __init__(self, document_id: int) -> None:
+        self.document_id = document_id
+        super().__init__(
+            f"Document not found: {document_id}"
+        )
+
+
 MODEL_ERROR_MAPPINGS: list[tuple[type[Exception], ErrorMapping]] = [
     (
         AuthenticationError,
@@ -169,6 +177,11 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         DocumentTooLargeError,
         handle_document_too_large,
+    )
+
+    app.add_exception_handler(
+        DocumentNotFoundError,
+        handle_document_not_found,
     )
 
 
@@ -281,5 +294,28 @@ async def handle_document_too_large(
 
     return JSONResponse(
         status_code=413,
+        content=error_response.model_dump(),
+    )
+
+
+async def handle_document_not_found(
+        request: Request,
+        exc: DocumentNotFoundError,
+) -> JSONResponse:
+    logger.info(
+        "Document not found: id=%d, path=%s",
+        exc.document_id,
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="DOCUMENT_NOT_FOUND",
+            message="Document not found",
+        )
+    )
+
+    return JSONResponse(
+        status_code=404,
         content=error_response.model_dump(),
     )
