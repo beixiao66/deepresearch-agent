@@ -8,6 +8,9 @@ from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.services.file_storage import FileStorageService
 from app.services.document_indexer import DocumentIndexer
 from app.services.qdrant_store import QdrantStore
+from app.services.document_embedder import DocumentEmbedder
+from app.services.document_parser import DocumentParser
+from app.services.document_splitter import DocumentSplitter
 
 
 class DocumentService:
@@ -17,6 +20,7 @@ class DocumentService:
             knowledge_base_repository: KnowledgeBaseRepository,
             file_storage: FileStorageService,
             qdrant_store: QdrantStore,
+            indexer: DocumentIndexer,
             session: AsyncSession,
     ) -> None:
         self.document_repository = document_repository
@@ -25,6 +29,7 @@ class DocumentService:
         )
         self.file_storage = file_storage
         self.qdrant_store = qdrant_store
+        self.indexer = indexer
         self.session = session
 
     async def upload_document(
@@ -64,6 +69,13 @@ class DocumentService:
                 stored_file.storage_path
             )
             raise
+
+        await self._index_after_upload(
+            knowledge_base_id,
+            document,
+        )
+
+        await self.session.refresh(document)
 
         return document
 
@@ -183,3 +195,41 @@ class DocumentService:
             raise
 
         return point_count
+
+    async def _index_after_upload(
+            self,
+            knowledge_base_id: int,
+            document: Document,
+    ) -> None:
+        try:
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.PROCESSING,
+            )
+            await self.session.commit()
+
+            await self.indexer.index_document(
+                storage_path=document.storage_path,
+                file_extension=document.file_extension,
+                document_id=document.id,
+                knowledge_base_id=knowledge_base_id,
+            )
+
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.COMPLETED,
+            )
+            await self.session.commit()
+        except Exception as exc:
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.FAILED,
+                error_message=str(exc),
+            )
+            await self.session.commit()
+            logger.error(
+                "Document indexing failed: document_id=%d, error=%s",
+                document.id,
+                exc,
+                exc_info=True,
+            )

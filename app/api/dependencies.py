@@ -16,6 +16,13 @@ from app.repositories.knowledge_base import (
 from app.services.document import DocumentService
 from app.services.file_storage import FileStorageService
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.document_indexer import DocumentIndexer
+from app.services.document_embedder import (
+    DocumentEmbedder,
+    get_embedding_client,
+)
+from app.services.document_parser import DocumentParser
+from app.services.document_splitter import DocumentSplitter
 
 DatabaseSession = Annotated[
     AsyncSession,
@@ -91,11 +98,29 @@ QdrantStoreDependency = Annotated[
 ]
 
 
+def get_document_indexer(
+        qdrant_store: QdrantStoreDependency,
+) -> DocumentIndexer:
+    return DocumentIndexer(
+        parser=DocumentParser(),
+        splitter=DocumentSplitter(),
+        embedder=DocumentEmbedder(get_embedding_client()),
+        qdrant_store=qdrant_store,
+    )
+
+
+DocumentIndexerDependency = Annotated[
+    DocumentIndexer,
+    Depends(get_document_indexer),
+]
+
+
 def get_document_service(
         document_repository: DocumentRepositoryDependency,
         knowledge_base_repository: KnowledgeBaseRepositoryDependency,
         file_storage: FileStorageServiceDependency,
         qdrant_store: QdrantStoreDependency,
+        indexer: DocumentIndexerDependency,
         session: DatabaseSession,
 ) -> DocumentService:
     return DocumentService(
@@ -103,6 +128,7 @@ def get_document_service(
         knowledge_base_repository=knowledge_base_repository,
         file_storage=file_storage,
         qdrant_store=qdrant_store,
+        indexer=indexer,
         session=session,
     )
 
