@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     upload_directory: str = "data/uploads"
     max_upload_size: int = 10 * 1024 * 1024
     upload_chunk_size: int = 1024 * 1024
-
+    qdrant_url: str = "http://127.0.0.1:6333"
+    qdrant_collection: str = "deepresearch_documents"
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
