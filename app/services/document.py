@@ -7,6 +7,7 @@ from app.repositories.document import DocumentRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.services.file_storage import FileStorageService
 from app.services.document_indexer import DocumentIndexer
+from app.services.qdrant_store import QdrantStore
 
 
 class DocumentService:
@@ -15,6 +16,7 @@ class DocumentService:
             document_repository: DocumentRepository,
             knowledge_base_repository: KnowledgeBaseRepository,
             file_storage: FileStorageService,
+            qdrant_store: QdrantStore,
             session: AsyncSession,
     ) -> None:
         self.document_repository = document_repository
@@ -22,6 +24,7 @@ class DocumentService:
             knowledge_base_repository
         )
         self.file_storage = file_storage
+        self.qdrant_store = qdrant_store
         self.session = session
 
     async def upload_document(
@@ -110,6 +113,7 @@ class DocumentService:
             raise DocumentNotFoundError(document_id)
 
         stored_file_path = document.storage_path
+        document_id = document.id
 
         try:
             await self.document_repository.delete(document)
@@ -119,6 +123,9 @@ class DocumentService:
             raise
 
         await self.file_storage.remove(stored_file_path)
+        await self.qdrant_store.delete_document_points(
+            document_id
+        )
 
     async def index_document(
             self,
