@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+from dataclasses import dataclass
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
@@ -19,6 +21,15 @@ def get_qdrant_client() -> AsyncQdrantClient:
     return AsyncQdrantClient(
         url=settings.qdrant_url,
     )
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    document_id: int | None
+    chunk_index: int | None
+    text: str
+    score: float
+
 
 
 class QdrantStore:
@@ -84,6 +95,16 @@ class QdrantStore:
             self,
             document_id: int,
     ) -> None:
+        collections = await self.client.get_collections()
+
+        collection_names = {
+            collection.name
+            for collection in collections.collections
+        }
+
+        if self.collection_name not in collection_names:
+            return
+
         await self.client.delete(
             collection_name=self.collection_name,
             points_selector=Filter(
@@ -97,3 +118,40 @@ class QdrantStore:
                 ]
             ),
         )
+
+    async def search(
+            self,
+            query_vector: list[float],
+            knowledge_base_id: int,
+            limit: int = 5,
+    ) -> list[SearchResult]:
+        response = await self.client.query_points(
+            collection_name=self.collection_name,
+            query=query_vector,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="knowledge_base_id",
+                        match=MatchValue(
+                            value=knowledge_base_id
+                        ),
+                    )
+                ]
+            ),
+            limit=limit,
+            with_payload=True,
+        )
+
+        results = []
+        for point in response.points:
+            payload = point.payload or {}
+            results.append(
+                SearchResult(
+                    document_id=payload.get("document_id"),
+                    chunk_index=payload.get("chunk_index"),
+                    text=payload.get("text", ""),
+                    score=point.score,
+                )
+            )
+
+        return results

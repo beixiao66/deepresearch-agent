@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,8 @@ from app.services.qdrant_store import QdrantStore
 from app.services.document_embedder import DocumentEmbedder
 from app.services.document_parser import DocumentParser
 from app.services.document_splitter import DocumentSplitter
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentService:

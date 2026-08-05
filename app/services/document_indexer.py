@@ -54,6 +54,8 @@ class DocumentIndexer:
             chunk_texts
         )
 
+        await self.qdrant_store.ensure_collection()
+
         point_count = await self.qdrant_store.upsert_chunks(
             document_id=document_id,
             knowledge_base_id=knowledge_base_id,

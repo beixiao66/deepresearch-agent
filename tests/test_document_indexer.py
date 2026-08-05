@@ -34,6 +34,7 @@ def test_index_document_full_pipeline() -> None:
         )
 
         qdrant_store = Mock()
+        qdrant_store.ensure_collection = AsyncMock()
         qdrant_store.upsert_chunks = AsyncMock(
             return_value=3
         )
