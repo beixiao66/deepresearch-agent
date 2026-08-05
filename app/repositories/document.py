@@ -68,3 +68,13 @@ class DocumentRepository:
             document: Document,
     ) -> None:
         await self.session.delete(document)
+
+    async def update_status(
+            self,
+            document: Document,
+            status: DocumentStatus,
+            error_message: str | None = None,
+    ) -> None:
+        document.status = status.value
+        document.error_message = error_message
+

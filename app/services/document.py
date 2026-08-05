@@ -1,11 +1,20 @@
+import logging
+
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import KnowledgeBaseNotFoundError, DocumentNotFoundError
-from app.models.document import Document
+from app.models.document import Document, DocumentStatus
 from app.repositories.document import DocumentRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.services.file_storage import FileStorageService
+from app.services.document_indexer import DocumentIndexer
+from app.services.qdrant_store import QdrantStore
+from app.services.document_embedder import DocumentEmbedder
+from app.services.document_parser import DocumentParser
+from app.services.document_splitter import DocumentSplitter
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentService:
@@ -14,6 +23,8 @@ class DocumentService:
             document_repository: DocumentRepository,
             knowledge_base_repository: KnowledgeBaseRepository,
             file_storage: FileStorageService,
+            qdrant_store: QdrantStore,
+            indexer: DocumentIndexer,
             session: AsyncSession,
     ) -> None:
         self.document_repository = document_repository
@@ -21,6 +32,8 @@ class DocumentService:
             knowledge_base_repository
         )
         self.file_storage = file_storage
+        self.qdrant_store = qdrant_store
+        self.indexer = indexer
         self.session = session
 
     async def upload_document(
@@ -60,6 +73,13 @@ class DocumentService:
                 stored_file.storage_path
             )
             raise
+
+        await self._index_after_upload(
+            knowledge_base_id,
+            document,
+        )
+
+        await self.session.refresh(document)
 
         return document
 
@@ -109,6 +129,7 @@ class DocumentService:
             raise DocumentNotFoundError(document_id)
 
         stored_file_path = document.storage_path
+        document_id = document.id
 
         try:
             await self.document_repository.delete(document)
@@ -118,3 +139,101 @@ class DocumentService:
             raise
 
         await self.file_storage.remove(stored_file_path)
+        await self.qdrant_store.delete_document_points(
+            document_id
+        )
+
+    async def index_document(
+            self,
+            knowledge_base_id: int,
+            document_id: int,
+            indexer: DocumentIndexer,
+    ) -> int:
+        knowledge_base = (
+            await self.knowledge_base_repository.get_by_id(
+                knowledge_base_id
+            )
+        )
+
+        if knowledge_base is None:
+            raise KnowledgeBaseNotFoundError(
+                knowledge_base_id
+            )
+
+        document = (
+            await self.document_repository.get_by_id(
+                knowledge_base_id,
+                document_id,
+            )
+        )
+
+        if document is None:
+            raise DocumentNotFoundError(document_id)
+
+        await self.document_repository.update_status(
+            document,
+            DocumentStatus.PROCESSING,
+        )
+        await self.session.commit()
+
+        try:
+            point_count = await indexer.index_document(
+                storage_path=document.storage_path,
+                file_extension=document.file_extension,
+                document_id=document.id,
+                knowledge_base_id=knowledge_base_id,
+            )
+
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.COMPLETED,
+            )
+            await self.session.commit()
+        except Exception as exc:
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.FAILED,
+                error_message=str(exc),
+            )
+            await self.session.commit()
+            raise
+
+        return point_count
+
+    async def _index_after_upload(
+            self,
+            knowledge_base_id: int,
+            document: Document,
+    ) -> None:
+        try:
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.PROCESSING,
+            )
+            await self.session.commit()
+
+            await self.indexer.index_document(
+                storage_path=document.storage_path,
+                file_extension=document.file_extension,
+                document_id=document.id,
+                knowledge_base_id=knowledge_base_id,
+            )
+
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.COMPLETED,
+            )
+            await self.session.commit()
+        except Exception as exc:
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.FAILED,
+                error_message=str(exc),
+            )
+            await self.session.commit()
+            logger.error(
+                "Document indexing failed: document_id=%d, error=%s",
+                document.id,
+                exc,
+                exc_info=True,
+            )

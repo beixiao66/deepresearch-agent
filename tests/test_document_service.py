@@ -50,15 +50,24 @@ def test_upload_document_success_commits() -> None:
         document_repository.create = AsyncMock(
             return_value=build_document()
         )
+        document_repository.update_status = AsyncMock()
+
+        indexer = Mock()
+        indexer.index_document = AsyncMock(
+            return_value=1
+        )
 
         session = Mock()
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
+        session.refresh = AsyncMock()
 
         service = DocumentService(
             document_repository=document_repository,
             knowledge_base_repository=knowledge_base_repository,
             file_storage=file_storage,
+            qdrant_store=Mock(),
+            indexer=indexer,
             session=session,
         )
 
@@ -68,9 +77,11 @@ def test_upload_document_success_commits() -> None:
         )
 
         assert result.id == 1
-        session.commit.assert_awaited_once()
+        session.commit.assert_awaited()
         session.rollback.assert_not_awaited()
         file_storage.remove.assert_not_awaited()
+        document_repository.update_status.assert_awaited()
+        indexer.index_document.assert_awaited_once()
 
     asyncio.run(run_test())
 
@@ -90,11 +101,14 @@ def test_upload_document_missing_knowledge_base() -> None:
         session = Mock()
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
+        session.refresh = AsyncMock()
 
         service = DocumentService(
             document_repository=document_repository,
             knowledge_base_repository=knowledge_base_repository,
             file_storage=file_storage,
+            qdrant_store=Mock(),
+            indexer=Mock(),
             session=session,
         )
 
@@ -135,11 +149,14 @@ def test_upload_document_rolls_back_and_removes_file() -> None:
         session = Mock()
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
+        session.refresh = AsyncMock()
 
         service = DocumentService(
             document_repository=document_repository,
             knowledge_base_repository=knowledge_base_repository,
             file_storage=file_storage,
+            qdrant_store=Mock(),
+            indexer=Mock(),
             session=session,
         )
 
@@ -179,14 +196,20 @@ def test_delete_document_success_commits_and_removes_file() -> None:
         file_storage = Mock()
         file_storage.remove = AsyncMock()
 
+        qdrant_store = Mock()
+        qdrant_store.delete_document_points = AsyncMock()
+
         session = Mock()
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
+        session.refresh = AsyncMock()
 
         service = DocumentService(
             document_repository=document_repository,
             knowledge_base_repository=knowledge_base_repository,
             file_storage=file_storage,
+            qdrant_store=qdrant_store,
+            indexer=Mock(),
             session=session,
         )
 
@@ -202,6 +225,9 @@ def test_delete_document_success_commits_and_removes_file() -> None:
         session.rollback.assert_not_awaited()
         file_storage.remove.assert_awaited_once_with(
             "data/uploads/10/uuid.pdf"
+        )
+        qdrant_store.delete_document_points.assert_awaited_once_with(
+            1
         )
 
     asyncio.run(run_test())
@@ -226,11 +252,14 @@ def test_delete_document_missing_raises_not_found() -> None:
         session = Mock()
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
+        session.refresh = AsyncMock()
 
         service = DocumentService(
             document_repository=document_repository,
             knowledge_base_repository=knowledge_base_repository,
             file_storage=file_storage,
+            qdrant_store=Mock(),
+            indexer=Mock(),
             session=session,
         )
 
