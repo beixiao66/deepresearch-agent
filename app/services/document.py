@@ -2,10 +2,11 @@ from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import KnowledgeBaseNotFoundError, DocumentNotFoundError
-from app.models.document import Document
+from app.models.document import Document, DocumentStatus
 from app.repositories.document import DocumentRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.services.file_storage import FileStorageService
+from app.services.document_indexer import DocumentIndexer
 
 
 class DocumentService:
@@ -118,3 +119,60 @@ class DocumentService:
             raise
 
         await self.file_storage.remove(stored_file_path)
+
+    async def index_document(
+            self,
+            knowledge_base_id: int,
+            document_id: int,
+            indexer: DocumentIndexer,
+    ) -> int:
+        knowledge_base = (
+            await self.knowledge_base_repository.get_by_id(
+                knowledge_base_id
+            )
+        )
+
+        if knowledge_base is None:
+            raise KnowledgeBaseNotFoundError(
+                knowledge_base_id
+            )
+
+        document = (
+            await self.document_repository.get_by_id(
+                knowledge_base_id,
+                document_id,
+            )
+        )
+
+        if document is None:
+            raise DocumentNotFoundError(document_id)
+
+        await self.document_repository.update_status(
+            document,
+            DocumentStatus.PROCESSING,
+        )
+        await self.session.commit()
+
+        try:
+            point_count = await indexer.index_document(
+                storage_path=document.storage_path,
+                file_extension=document.file_extension,
+                document_id=document.id,
+                knowledge_base_id=knowledge_base_id,
+            )
+
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.COMPLETED,
+            )
+            await self.session.commit()
+        except Exception as exc:
+            await self.document_repository.update_status(
+                document,
+                DocumentStatus.FAILED,
+                error_message=str(exc),
+            )
+            await self.session.commit()
+            raise
+
+        return point_count

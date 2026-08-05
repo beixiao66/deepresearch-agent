@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+import anyio
 from openai import OpenAI
 
 from app.core.config import get_settings
@@ -19,7 +20,7 @@ class DocumentEmbedder:
     def __init__(self, client: OpenAI) -> None:
         self.client = client
 
-    def embed_texts(
+    def _embed_sync(
         self,
         texts: list[str],
     ) -> list[list[float]]:
@@ -32,3 +33,12 @@ class DocumentEmbedder:
             item.embedding
             for item in response.data
         ]
+
+    async def embed_texts(
+        self,
+        texts: list[str],
+    ) -> list[list[float]]:
+        return await anyio.to_thread.run_sync(
+            self._embed_sync,
+            texts,
+        )
