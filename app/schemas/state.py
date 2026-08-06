@@ -1,0 +1,16 @@
+from typing import Annotated, TypedDict
+
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
+
+from app.schemas.research import ResearchPlan
+
+
+class ResearchState(TypedDict):
+    """LangGraph 图节点间共享的状态。"""
+    question: str
+    knowledge_base_id: int
+    plan: ResearchPlan
+    sources: list[dict]
+    answer: str
+    messages: Annotated[list[AnyMessage], add_messages]
