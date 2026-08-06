@@ -13,4 +13,6 @@ class ResearchState(TypedDict):
     plan: ResearchPlan
     sources: list[dict]
     answer: str
+    retrieval_round: int
+    next_queries: list[str]
     messages: Annotated[list[AnyMessage], add_messages]

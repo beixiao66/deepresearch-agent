@@ -49,11 +49,15 @@ async def _plan_research(state: ResearchState) -> dict:
 
 async def _retrieve(state: ResearchState) -> dict:
     """检索节点：根据规划产出的关键词查询向量库，收集资料片段。"""
-    logger.info("retrieve node")
+    logger.info("retrieve node: round %d", state.get("retrieval_round", 0) + 1)
     retriever = get_retriever()
     sources: list[dict] = []
 
-    for query in state["plan"].search_queries:
+    queries = state["plan"].search_queries
+    if state.get("next_queries"):
+        queries = state["next_queries"]
+
+    for query in queries:
         results = await retriever.retrieve(
             question=query,
             knowledge_base_id=state.get(
@@ -73,8 +77,64 @@ async def _retrieve(state: ResearchState) -> dict:
                 }
             )
 
-    logger.info("retrieved %d sources", len(sources))
-    return {"sources": sources}
+    existing = state.get("sources", [])
+    combined = existing + sources
+
+    logger.info("retrieved %d new sources, total %d", len(sources), len(combined))
+    return {
+        "sources": combined,
+        "retrieval_round": state.get("retrieval_round", 0) + 1,
+    }
+
+
+async def _next_queries(state: ResearchState) -> dict:
+    """补充查询节点：检索不足时，让 LLM 生成新一轮更精准的查询词。"""
+    logger.info("next_queries node: generating follow-up queries")
+    messages = [
+        SystemMessage(
+            content=(
+                "你是研究助手。当前检索到的资料不足以回答研究问题，"
+                "请生成3个与问题相关的补充检索关键词，"
+                "每个关键词独立一行，不要编号。"
+            )
+        ),
+        HumanMessage(
+            content=(
+                f"研究问题：{state['question']}\n"
+                f"当前已检索：{len(state.get('sources', []))} 条资料"
+            )
+        ),
+    ]
+
+    response = await get_llm().ainvoke(messages)
+    new_queries = [
+        line.strip()
+        for line in str(response.content).splitlines()
+        if line.strip()
+    ][:3]
+
+    logger.info("follow-up queries: %s", new_queries)
+    return {"next_queries": new_queries}
+
+
+def _should_continue(state: ResearchState) -> str:
+    """条件边：检索充分则生成报告，否则继续检索（带轮次上限）。"""
+    MIN_SOURCES = 3
+    MAX_ROUNDS = 3
+
+    sources_count = len(state.get("sources", []))
+    round_count = state.get("retrieval_round", 0)
+
+    if sources_count >= MIN_SOURCES:
+        logger.info("enough sources (%d >= %d), report", sources_count, MIN_SOURCES)
+        return "report"
+
+    if round_count >= MAX_ROUNDS:
+        logger.info("max rounds reached (%d), report", round_count)
+        return "report"
+
+    logger.info("not enough sources (%d < %d), continue", sources_count, MIN_SOURCES)
+    return "next_queries"
 
 
 async def _report(state: ResearchState) -> dict:
@@ -116,16 +176,25 @@ async def _report(state: ResearchState) -> dict:
 
 
 def build_research_graph():
-    """构建 LangGraph 主流程：规划 -> 检索 -> 报告。"""
+    """构建 LangGraph 主流程：规划 -> 检索 -> (条件判断循环) -> 报告。"""
     graph = StateGraph(ResearchState)
 
     graph.add_node("plan", _plan_research)
     graph.add_node("retrieve", _retrieve)
+    graph.add_node("next_queries", _next_queries)
     graph.add_node("report", _report)
 
     graph.add_edge(START, "plan")
     graph.add_edge("plan", "retrieve")
-    graph.add_edge("retrieve", "report")
+    graph.add_conditional_edges(
+        "retrieve",
+        _should_continue,
+        {
+            "report": "report",
+            "next_queries": "next_queries",
+        },
+    )
+    graph.add_edge("next_queries", "retrieve")
     graph.add_edge("report", END)
 
     return graph.compile()
