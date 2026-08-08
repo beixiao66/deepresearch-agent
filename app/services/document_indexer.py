@@ -69,4 +69,4 @@ class DocumentIndexer:
             point_count,
         )
 
-        return point_count
+        return point_count, chunk_texts
