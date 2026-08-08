@@ -46,7 +46,7 @@ def test_index_document_full_pipeline() -> None:
             qdrant_store=qdrant_store,
         )
 
-        point_count = await indexer.index_document(
+        point_count, chunk_texts = await indexer.index_document(
             storage_path="data/uploads/1/uuid.md",
             file_extension=".md",
             document_id=5,
@@ -54,6 +54,7 @@ def test_index_document_full_pipeline() -> None:
         )
 
         assert point_count == 3
+        assert chunk_texts == ["第一段", "第二段", "第三段"]
         parser.parse.assert_called_once_with(
             "data/uploads/1/uuid.md",
             ".md",

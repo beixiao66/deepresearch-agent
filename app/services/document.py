@@ -13,6 +13,7 @@ from app.services.qdrant_store import QdrantStore
 from app.services.document_embedder import DocumentEmbedder
 from app.services.document_parser import DocumentParser
 from app.services.document_splitter import DocumentSplitter
+from app.services.sparse_indexer import SparseIndexer
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,9 @@ class DocumentService:
             document_id
         )
 
+        sparse_indexer = SparseIndexer(self.session)
+        await sparse_indexer.delete_document(document_id)
+
     async def index_document(
             self,
             knowledge_base_id: int,
@@ -177,11 +181,19 @@ class DocumentService:
         await self.session.commit()
 
         try:
-            point_count = await indexer.index_document(
+            point_count, chunk_texts = await indexer.index_document(
                 storage_path=document.storage_path,
                 file_extension=document.file_extension,
                 document_id=document.id,
                 knowledge_base_id=knowledge_base_id,
+            )
+
+            sparse_indexer = SparseIndexer(self.session)
+            await sparse_indexer.ensure_table()
+            await sparse_indexer.index_chunks(
+                document_id=document.id,
+                knowledge_base_id=knowledge_base_id,
+                chunks=chunk_texts,
             )
 
             await self.document_repository.update_status(
@@ -212,11 +224,19 @@ class DocumentService:
             )
             await self.session.commit()
 
-            await self.indexer.index_document(
+            _, chunk_texts = await self.indexer.index_document(
                 storage_path=document.storage_path,
                 file_extension=document.file_extension,
                 document_id=document.id,
                 knowledge_base_id=knowledge_base_id,
+            )
+
+            sparse_indexer = SparseIndexer(self.session)
+            await sparse_indexer.ensure_table()
+            await sparse_indexer.index_chunks(
+                document_id=document.id,
+                knowledge_base_id=knowledge_base_id,
+                chunks=chunk_texts,
             )
 
             await self.document_repository.update_status(
