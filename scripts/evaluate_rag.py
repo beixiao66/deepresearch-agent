@@ -1,4 +1,4 @@
-"""RAG 离线评估脚本：Recall@K 与 MRR。
+"""RAG 离线评估脚本：三档检索对比（纯向量 / 混合 / 混合+Rerank）。
 
 用法（项目根目录执行）：
     python scripts/evaluate_rag.py
@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, ".")
 
+from app.db.session import AsyncSessionLocal
 from app.services.document_retriever import DocumentRetriever
 from app.services.document_embedder import (
     DocumentEmbedder,
@@ -24,6 +25,9 @@ from app.services.qdrant_store import (
     QdrantStore,
     get_qdrant_client,
 )
+from app.services.reranker import get_reranker
+from app.services.sparse_indexer import SparseIndexer
+from app.services.sparse_retriever import SparseRetriever
 from app.core.config import get_settings
 
 # 文档 ID 对照（RAG评估语料库 knowledge_base_id=3）
@@ -141,10 +145,39 @@ EVALUATION_SET = [
         "question": "如何在 LangGraph 中做并行检索与汇总回答？",
         "relevant": [DOC_22],
     },
+    # ===== 挑战性问题：跨文档/关键词型，测试混合检索区分度 =====
+    # 关键词精确命中（向量可能漏，BM25 稳）
+    {
+        "question": "Redis Stack 是什么？",
+        "relevant": [DOC_18],
+    },
+    {
+        "question": "Milvus 和 Redis 怎么选？",
+        "relevant": [DOC_18],
+    },
+    {
+        "question": "DashScope 如何调用 Embedding？",
+        "relevant": [DOC_18],
+    },
+    {
+        "question": "LangChain 的 from_documents 是干什么的？",
+        "relevant": [DOC_19],
+    },
+    {
+        "question": "RecursiveCharacterTextSplitter 是什么？",
+        "relevant": [DOC_19],
+    },
+    {
+        "question": "智能运维助手案例讲了什么？",
+        "relevant": [DOC_19],
+    },
 ]
 
 
-def get_retriever() -> DocumentRetriever:
+def get_retriever(
+        sparse_retriever: SparseRetriever | None = None,
+        reranker=None,
+) -> DocumentRetriever:
     settings = get_settings()
 
     return DocumentRetriever(
@@ -154,6 +187,8 @@ def get_retriever() -> DocumentRetriever:
             collection_name=settings.qdrant_collection,
             vector_size=1024,
         ),
+        sparse_retriever=sparse_retriever,
+        reranker=reranker,
     )
 
 
@@ -200,67 +235,90 @@ def compute_metrics(
 
 async def main() -> None:
     settings = get_settings()
-    retriever = get_retriever()
 
-    k_values = [5, 10]
-    total = len(EVALUATION_SET)
-    recalls = {k: 0.0 for k in k_values}
-    mrrs = {k: 0.0 for k in k_values}
+    async with AsyncSessionLocal() as session:
+        await SparseIndexer(session).ensure_table()
+        sparse_retriever = SparseRetriever(session)
 
-    print(f"评估知识库: knowledge_base_id={settings.qdrant_collection}")
-    print(f"评估问题数: {total}")
-    print("=" * 60)
-
-    for index, item in enumerate(EVALUATION_SET, start=1):
-        question = item["question"]
-        relevant = item["relevant"]
-
-        results = await retriever.retrieve(
-            question=question,
-            knowledge_base_id=3,
-            limit=10,
-        )
-
-        top_ids = [
-            (result.document_id, round(result.score, 3))
-            for result in results[:5]
-        ]
-
-        per_k = {
-            k: compute_metrics(results, relevant, k)
-            for k in k_values
+        retrievers = {
+            "dense": get_retriever(),
+            "hybrid": get_retriever(
+                sparse_retriever=sparse_retriever,
+            ),
+            "hybrid+rerank": get_retriever(
+                sparse_retriever=sparse_retriever,
+                reranker=get_reranker(),
+            ),
         }
-        for k in k_values:
-            recalls[k] += per_k[k]["recall"]
-            mrrs[k] += per_k[k]["mrr"]
 
-        # 命中情况：检索结果中是否出现相关文档
-        relevant_hit = "✓" if any(
-            r.document_id in relevant
-            for r in results
-        ) else "✗"
+        k_values = [5, 10]
+        total = len(EVALUATION_SET)
 
-        print(
-            f"[{index:02d}/{total}] {relevant_hit} {question[:40]}"
-        )
-        print(
-            f"        top5={top_ids}"
-        )
-        print(
-            f"        Recall@5={per_k[5]['recall']:.2f} "
-            f"Recall@10={per_k[10]['recall']:.2f} "
-            f"MRR={per_k[5]['mrr']:.3f}"
-        )
+        # aggregates[检索方式][指标] = 累加值
+        aggregates = {
+            name: {
+                "recall_5": 0.0,
+                "recall_10": 0.0,
+                "mrr": 0.0,
+                "hit": 0,
+            }
+            for name in retrievers
+        }
 
-    print("=" * 60)
-    print("汇总指标：")
-    for k in k_values:
-        print(
-            f"  Recall@{k}: {recalls[k] / total:.3f}"
-        )
-        print(
-            f"  MRR@{k}:   {mrrs[k] / total:.3f}"
-        )
+        print(f"评估知识库: knowledge_base_id=3")
+        print(f"评估问题数: {total}，检索方式: {list(retrievers)}")
+        print("=" * 90)
+
+        for index, item in enumerate(EVALUATION_SET, start=1):
+            question = item["question"]
+            relevant = item["relevant"]
+
+            print(f"[{index:02d}/{total}] {question[:36]}")
+
+            for name, retriever in retrievers.items():
+                if name == "dense":
+                    results = await retriever.retrieve(
+                        question=question,
+                        knowledge_base_id=3,
+                        limit=10,
+                    )
+                else:
+                    results = await retriever.retrieve_hybrid(
+                        question=question,
+                        knowledge_base_id=3,
+                        limit=10,
+                        rerank=(name == "hybrid+rerank"),
+                    )
+
+                metrics_5 = compute_metrics(results, relevant, 5)
+                metrics_10 = compute_metrics(results, relevant, 10)
+
+                aggregates[name]["recall_5"] += metrics_5["recall"]
+                aggregates[name]["recall_10"] += metrics_10["recall"]
+                aggregates[name]["mrr"] += metrics_5["mrr"]
+                if metrics_5["recall"] > 0:
+                    aggregates[name]["hit"] += 1
+
+                hit = "✓" if metrics_5["recall"] > 0 else "✗"
+                print(
+                    f"    {name:12s} {hit} "
+                    f"R@5={metrics_5['recall']:.2f} "
+                    f"R@10={metrics_10['recall']:.2f} "
+                    f"MRR={metrics_5['mrr']:.3f}"
+                )
+
+        print("=" * 90)
+        print("汇总指标（三档对比）：")
+        print(f"{'方式':<14s} {'Recall@5':>9s} {'Recall@10':>10s} {'MRR':>7s} {'命中率':>7s}")
+        for name in retrievers:
+            agg = aggregates[name]
+            print(
+                f"{name:<14s} "
+                f"{agg['recall_5'] / total:>9.3f} "
+                f"{agg['recall_10'] / total:>10.3f} "
+                f"{agg['mrr'] / total:>7.3f} "
+                f"{agg['hit'] / total:>7.2f}"
+            )
 
 
 if __name__ == "__main__":
