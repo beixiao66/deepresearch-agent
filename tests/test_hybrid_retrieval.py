@@ -5,8 +5,25 @@ import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.services.sparse_indexer import SparseIndexer
-from app.services.sparse_retriever import SparseRetriever
+from app.services.sparse_retriever import (
+    SparseRetriever,
+    build_match_query,
+)
 from app.services.rrf import rrf_fuse
+
+
+def test_build_match_query_escapes_special_chars() -> None:
+    assert (
+        build_match_query("step-by-step")
+        == '"step by step"'
+    )
+    assert (
+        build_match_query("RAG 是什么")
+        == '"RAG" AND "是什么"'
+    )
+    assert '"("' not in build_match_query(
+        "Chunking (split)"
+    )
 
 
 @pytest.fixture
