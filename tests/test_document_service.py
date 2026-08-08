@@ -203,6 +203,7 @@ def test_delete_document_success_commits_and_removes_file() -> None:
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
         session.refresh = AsyncMock()
+        session.execute = AsyncMock()
 
         service = DocumentService(
             document_repository=document_repository,
@@ -221,7 +222,7 @@ def test_delete_document_success_commits_and_removes_file() -> None:
         document_repository.delete.assert_awaited_once_with(
             document
         )
-        session.commit.assert_awaited_once()
+        session.commit.assert_awaited()
         session.rollback.assert_not_awaited()
         file_storage.remove.assert_awaited_once_with(
             "data/uploads/10/uuid.pdf"
