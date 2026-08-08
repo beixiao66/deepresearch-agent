@@ -17,6 +17,8 @@ def get_embedding_client() -> OpenAI:
 
 
 class DocumentEmbedder:
+    BATCH_SIZE = 10
+
     def __init__(self, client: OpenAI) -> None:
         self.client = client
 
@@ -24,15 +26,21 @@ class DocumentEmbedder:
         self,
         texts: list[str],
     ) -> list[list[float]]:
-        response = self.client.embeddings.create(
-            model="text-embedding-v4",
-            input=texts,
-        )
+        vectors: list[list[float]] = []
 
-        return [
-            item.embedding
-            for item in response.data
-        ]
+        for start in range(0, len(texts), self.BATCH_SIZE):
+            batch = texts[start:start + self.BATCH_SIZE]
+
+            response = self.client.embeddings.create(
+                model="text-embedding-v4",
+                input=batch,
+            )
+            vectors.extend(
+                item.embedding
+                for item in response.data
+            )
+
+        return vectors
 
     async def embed_texts(
         self,
