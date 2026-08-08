@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
 from app.schemas.state import ResearchState
+from app.db.session import AsyncSessionLocal
 from app.services.document_embedder import (
     DocumentEmbedder,
     get_embedding_client,
@@ -17,6 +18,9 @@ from app.services.qdrant_store import (
     QdrantStore,
     get_qdrant_client,
 )
+from app.services.reranker import get_reranker
+from app.services.sparse_indexer import SparseIndexer
+from app.services.sparse_retriever import SparseRetriever
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -24,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @lru_cache
 def get_retriever() -> DocumentRetriever:
-    """构建全局复用的检索器实例（含 embedding 客户端）。"""
+    """构建全局复用的检索器实例（向量路）。"""
     settings = get_settings()
 
     return DocumentRetriever(
@@ -50,32 +54,48 @@ async def _plan_research(state: ResearchState) -> dict:
 async def _retrieve(state: ResearchState) -> dict:
     """检索节点：根据规划产出的关键词查询向量库，收集资料片段。"""
     logger.info("retrieve node: round %d", state.get("retrieval_round", 0) + 1)
-    retriever = get_retriever()
     sources: list[dict] = []
 
     queries = state["plan"].search_queries
     if state.get("next_queries"):
         queries = state["next_queries"]
 
-    for query in queries:
-        results = await retriever.retrieve(
-            question=query,
-            knowledge_base_id=state.get(
-                "knowledge_base_id",
-                1,
+    # 混合检索：向量 + FTS5 + Rerank。
+    # SparseRetriever 需要 session，session 生命周期 = 本节点执行周期。
+    async with AsyncSessionLocal() as session:
+        await SparseIndexer(session).ensure_table()
+
+        retriever = DocumentRetriever(
+            embedder=DocumentEmbedder(get_embedding_client()),
+            qdrant_store=QdrantStore(
+                client=get_qdrant_client(),
+                collection_name=get_settings().qdrant_collection,
+                vector_size=1024,
             ),
-            limit=3,
+            sparse_retriever=SparseRetriever(session),
+            reranker=get_reranker(),
         )
-        for result in results:
-            sources.append(
-                {
-                    "document_id": result.document_id,
-                    "chunk_index": result.chunk_index,
-                    "text": result.text,
-                    "score": result.score,
-                    "query": query,
-                }
+
+        for query in queries:
+            results = await retriever.retrieve_hybrid(
+                question=query,
+                knowledge_base_id=state.get(
+                    "knowledge_base_id",
+                    1,
+                ),
+                limit=3,
+                rerank=True,
             )
+            for result in results:
+                sources.append(
+                    {
+                        "document_id": result.document_id,
+                        "chunk_index": result.chunk_index,
+                        "text": result.text,
+                        "score": result.score,
+                        "query": query,
+                    }
+                )
 
     existing = state.get("sources", [])
     combined = existing + sources
