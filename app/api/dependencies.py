@@ -24,6 +24,7 @@ from app.services.document_embedder import (
 from app.services.document_parser import DocumentParser
 from app.services.document_splitter import DocumentSplitter
 from app.services.document_retriever import DocumentRetriever
+from app.services.reranker import get_reranker
 from app.services.sparse_retriever import SparseRetriever
 
 DatabaseSession = Annotated[
@@ -149,6 +150,7 @@ def get_document_retriever(
         embedder=DocumentEmbedder(get_embedding_client()),
         qdrant_store=qdrant_store,
         sparse_retriever=SparseRetriever(session),
+        reranker=get_reranker(),
     )
 
 
