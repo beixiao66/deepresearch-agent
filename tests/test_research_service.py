@@ -216,8 +216,27 @@ def test_approve_research_rejected_marks_failed(
 
 def test_should_continue_enough_sources_reports() -> None:
     assert _should_continue(
-        {"sources": [{"text": "a"}, {"text": "b"}, {"text": "c"}]}
+        {
+            "sources": [
+                {"text": "a", "score": 0.8},
+                {"text": "b", "score": 0.7},
+                {"text": "c", "score": 0.6},
+            ]
+        }
     ) == "report"
+
+
+def test_should_continue_low_quality_sources_continue() -> None:
+    assert _should_continue(
+        {
+            "sources": [
+                {"text": "a", "score": 0.1},
+                {"text": "b", "score": 0.1},
+                {"text": "c", "score": 0.1},
+            ],
+            "retrieval_round": 1,
+        }
+    ) == "next_queries"
 
 
 def test_should_continue_insufficient_sources_next_queries() -> None:

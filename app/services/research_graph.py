@@ -1,5 +1,6 @@
 import logging
 
+import anyio
 from functools import lru_cache
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -8,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from app.schemas.state import ResearchState
+from app.services.web_search import search_web
 from app.db.session import AsyncSessionLocal
 from app.services.document_embedder import (
     DocumentEmbedder,
@@ -50,6 +52,7 @@ async def _plan_research(state: ResearchState) -> dict:
     return {
         "plan": plan,
         "knowledge_base_id": state["knowledge_base_id"],
+        "use_web_search": state.get("use_web_search", False),
     }
 
 
@@ -126,6 +129,46 @@ async def _retrieve(state: ResearchState) -> dict:
     existing = state.get("sources", [])
     combined = existing + sources
 
+    # 知识库证据不足且开启联网：补一轮 Tavily 搜索
+    # 判定标准与证据评估一致：条数不足 或 平均分过低
+    # 只在第一轮触发（round 0），避免每轮循环都重复联网
+    is_first_round = state.get("retrieval_round", 0) == 0
+    if is_first_round and state.get("use_web_search", False):
+        evidence_insufficient = False
+
+        if len(combined) < 3:
+            evidence_insufficient = True
+        elif combined:
+            avg_score = sum(
+                source.get("score", 0.0)
+                for source in combined
+            ) / len(combined)
+            if avg_score < 0.3:
+                evidence_insufficient = True
+
+        if evidence_insufficient:
+            logger.info(
+                "knowledge base evidence insufficient, searching web"
+            )
+            for query in queries:
+                web_results = await anyio.to_thread.run_sync(
+                    search_web,
+                    query,
+                    3,
+                )
+                for web_result in web_results:
+                    combined.append(
+                        {
+                            "document_id": None,
+                            "chunk_index": None,
+                            "text": web_result.content,
+                            "score": web_result.score,
+                            "query": query,
+                            "source_type": "web",
+                            "url": web_result.url,
+                        }
+                    )
+
     logger.info("retrieved %d new sources, total %d", len(sources), len(combined))
     return {
         "sources": combined,
@@ -164,16 +207,51 @@ async def _next_queries(state: ResearchState) -> dict:
 
 
 def _should_continue(state: ResearchState) -> str:
-    """条件边：检索充分则生成报告，否则继续检索（带轮次上限）。"""
+    """条件边：评估证据充分性，充分则生成报告，否则继续检索（带轮次上限）。
+
+    评估维度：
+    - 条数：检索到的资料片段数
+    - 平均分：片段的平均相关度（过低视为证据不足，即使条数够）
+    """
     MIN_SOURCES = 3
     MAX_ROUNDS = 3
+    MIN_AVG_SCORE = 0.3
 
-    sources_count = len(state.get("sources", []))
+    sources = state.get("sources", [])
+    sources_count = len(sources)
     round_count = state.get("retrieval_round", 0)
 
     if sources_count >= MIN_SOURCES:
-        logger.info("enough sources (%d >= %d), report", sources_count, MIN_SOURCES)
+        avg_score = sum(
+            source.get("score", 0.0)
+            for source in sources
+        ) / sources_count
+
+        if avg_score >= MIN_AVG_SCORE:
+            logger.info(
+                "evidence sufficient (%d sources, avg %.2f), report",
+                sources_count,
+                avg_score,
+            )
+            return "report"
+
+        logger.info(
+            "evidence weak (avg %.2f < %.2f), continue",
+            avg_score,
+            MIN_AVG_SCORE,
+        )
+    else:
+        logger.info(
+            "not enough sources (%d < %d), continue",
+            sources_count,
+            MIN_SOURCES,
+        )
+
+    if round_count >= MAX_ROUNDS:
+        logger.info("max rounds reached (%d), report", round_count)
         return "report"
+
+    return "next_queries"
 
     if round_count >= MAX_ROUNDS:
         logger.info("max rounds reached (%d), report", round_count)

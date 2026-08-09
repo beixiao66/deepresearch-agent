@@ -10,6 +10,7 @@ class ResearchState(TypedDict):
     """LangGraph 图节点间共享的状态。"""
     question: str
     knowledge_base_id: int
+    use_web_search: bool
     plan: ResearchPlan
     sources: list[dict]
     answer: str

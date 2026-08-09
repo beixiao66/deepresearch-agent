@@ -62,6 +62,7 @@ async def start_research(
             {
                 "question": request.topic,
                 "knowledge_base_id": request.knowledge_base_id,
+                "use_web_search": request.use_web_search,
             },
             config=_build_thread_id(task.id),
         )
@@ -161,6 +162,11 @@ async def approve_research(
                 "text": source["text"],
                 "score": source["score"],
                 "query": source["query"],
+                "source_type": source.get(
+                    "source_type",
+                    "kb",
+                ),
+                "url": source.get("url"),
             }
             for source in result["sources"]
         ]
