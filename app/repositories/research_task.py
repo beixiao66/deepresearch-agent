@@ -54,6 +54,16 @@ class ResearchTaskRepository:
         task.status = status.value
         task.error_message = error_message
 
+    async def save_plan(
+            self,
+            task: ResearchTask,
+            plan: str | None,
+            thread_id: str,
+    ) -> None:
+        task.plan = plan
+        task.thread_id = thread_id
+        task.status = ResearchTaskStatus.AWAITING_APPROVAL.value
+
     async def save_report(
             self,
             task: ResearchTask,

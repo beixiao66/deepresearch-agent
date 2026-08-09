@@ -47,7 +47,12 @@ class ResearchTaskResponse(BaseModel):
     topic: str
     knowledge_base_id: int
     status: str
+    plan: str | None = None
     report: str | None = None
     error_message: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ApproveRequest(BaseModel):
+    approved: bool

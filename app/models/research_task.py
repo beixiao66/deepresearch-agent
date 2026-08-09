@@ -10,6 +10,7 @@ from app.db.base import Base
 class ResearchTaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -35,6 +36,16 @@ class ResearchTask(Base):
         default=ResearchTaskStatus.PENDING.value,
         nullable=False,
         index=True,
+    )
+
+    thread_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    plan: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
     )
 
     report: Mapped[str | None] = mapped_column(
