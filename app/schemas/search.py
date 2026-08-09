@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SearchRequest(BaseModel):
@@ -6,6 +6,19 @@ class SearchRequest(BaseModel):
         min_length=1,
         max_length=1000,
     )
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def normalize_question(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+
+            if not value:
+                raise ValueError(
+                    "question cannot be empty"
+                )
+
+        return value
 
 
 class SearchResultItem(BaseModel):
