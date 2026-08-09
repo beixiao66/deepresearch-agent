@@ -25,23 +25,13 @@ def test_research_rejects_empty_topic(topic: str) -> None:
 
 
 def test_research_returns_mocked_report(monkeypatch) -> None:
-    plan = ResearchPlan(
-        topic="Agentic RAG",
-        objective="研究 Agentic RAG",
-        sub_questions=["Agentic RAG 是什么？"],
-        search_queries=["Agentic RAG"],
-    )
-    report = ResearchReport(
-        topic="Agentic RAG",
-        plan=plan,
-        sources=[],
-        answer="Agentic RAG 是……",
-    )
+    async def fake_stream(request, task_repository):
+        yield "data: {\"type\": \"task_created\", \"task_id\": 1}\n\n"
+        yield "data: {\"type\": \"awaiting_approval\"}\n\n"
 
-    mock_run = AsyncMock(return_value=report)
     monkeypatch.setattr(
-        "app.api.routes.research.start_research",
-        mock_run,
+        "app.api.routes.research.stream_start_research",
+        fake_stream,
     )
 
     response = client.post(
@@ -50,5 +40,8 @@ def test_research_returns_mocked_report(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == report.model_dump()
-    mock_run.assert_awaited_once()
+    assert response.headers["content-type"].startswith(
+        "text/event-stream"
+    )
+    assert "task_created" in response.text
+    assert "awaiting_approval" in response.text

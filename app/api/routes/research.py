@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Path
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import (
     ResearchTaskRepositoryDependency,
@@ -6,14 +7,13 @@ from app.api.dependencies import (
 from app.schemas.research import ResearchPlan, ResearchPlanRequest
 from app.schemas.research_report import (
     ApproveRequest,
-    ResearchReport,
     ResearchRequest,
     ResearchTaskResponse,
 )
 from app.services.planner import generate_research_plan
-from app.services.research import (
-    approve_research,
-    start_research,
+from app.services.sse import (
+    stream_approve_research,
+    stream_start_research,
 )
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -26,24 +26,38 @@ async def create_research_plan(
     return await generate_research_plan(request.topic)
 
 
-@router.post("", response_model=ResearchReport)
+@router.post("")
 async def create_research(
         request: ResearchRequest,
         task_repository: ResearchTaskRepositoryDependency,
-) -> ResearchReport:
-    return await start_research(request, task_repository)
+) -> StreamingResponse:
+    return StreamingResponse(
+        stream_start_research(request, task_repository),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
-@router.post("/tasks/{task_id}/approve", response_model=ResearchReport)
+@router.post("/tasks/{task_id}/approve")
 async def approve_research_task(
         task_id: int = Path(gt=0),
         request: ApproveRequest = None,
         task_repository: ResearchTaskRepositoryDependency = None,
-) -> ResearchReport:
-    return await approve_research(
-        task_id,
-        request.approved,
-        task_repository,
+) -> StreamingResponse:
+    return StreamingResponse(
+        stream_approve_research(
+            task_id,
+            request.approved,
+            task_repository,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
