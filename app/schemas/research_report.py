@@ -14,6 +14,10 @@ class ResearchRequest(BaseModel):
         gt=0,
         description="要检索的知识库 ID",
     )
+    use_web_search: bool = Field(
+        default=False,
+        description="知识库不足时是否允许联网搜索",
+    )
 
     @field_validator("topic", mode="before")
     @classmethod
@@ -33,6 +37,8 @@ class SourceItem(BaseModel):
     text: str
     score: float
     query: str
+    source_type: str = "kb"
+    url: str | None = None
 
 
 class ResearchReport(BaseModel):
