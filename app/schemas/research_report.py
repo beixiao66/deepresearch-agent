@@ -40,3 +40,14 @@ class ResearchReport(BaseModel):
     plan: ResearchPlan
     sources: list[SourceItem]
     answer: str
+
+
+class ResearchTaskResponse(BaseModel):
+    id: int
+    topic: str
+    knowledge_base_id: int
+    status: str
+    report: str | None = None
+    error_message: str | None = None
+
+    model_config = {"from_attributes": True}

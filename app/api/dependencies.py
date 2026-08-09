@@ -13,6 +13,7 @@ from app.repositories.document import DocumentRepository
 from app.repositories.knowledge_base import (
     KnowledgeBaseRepository,
 )
+from app.repositories.research_task import ResearchTaskRepository
 from app.services.document import DocumentService
 from app.services.file_storage import FileStorageService
 from app.services.knowledge_base import KnowledgeBaseService
@@ -70,6 +71,18 @@ def get_document_repository(
 DocumentRepositoryDependency = Annotated[
     DocumentRepository,
     Depends(get_document_repository),
+]
+
+
+def get_research_task_repository(
+        session: DatabaseSession,
+) -> ResearchTaskRepository:
+    return ResearchTaskRepository(session)
+
+
+ResearchTaskRepositoryDependency = Annotated[
+    ResearchTaskRepository,
+    Depends(get_research_task_repository),
 ]
 
 
