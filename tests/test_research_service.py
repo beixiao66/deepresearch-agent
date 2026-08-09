@@ -5,7 +5,11 @@ import pytest
 
 from app.schemas.research import ResearchPlan
 from app.schemas.research_report import ResearchReport, ResearchRequest
-from app.services.research import get_research_graph, run_research
+from app.services.research import (
+    approve_research,
+    get_research_graph,
+    start_research,
+)
 from app.services.research_graph import (
     _should_continue,
     build_research_graph,
@@ -19,6 +23,7 @@ def test_build_research_graph_has_expected_structure() -> None:
     edges = graph.get_graph().edges
 
     assert "plan" in nodes
+    assert "review" in nodes
     assert "retrieve" in nodes
     assert "next_queries" in nodes
     assert "report" in nodes
@@ -31,7 +36,8 @@ def test_build_research_graph_has_expected_structure() -> None:
         if not edge.conditional
     ]
     assert ("__start__", "plan") in plain_edges
-    assert ("plan", "retrieve") in plain_edges
+    assert ("plan", "review") in plain_edges
+    assert ("review", "retrieve") in plain_edges
     assert ("next_queries", "retrieve") in plain_edges
     assert ("report", "__end__") in plain_edges
 
@@ -44,7 +50,63 @@ def test_build_research_graph_has_expected_structure() -> None:
     assert ("retrieve", "next_queries") in conditional_edges
 
 
-def test_run_research_returns_report(monkeypatch) -> None:
+def test_start_research_pauses_at_plan_review(
+        monkeypatch,
+) -> None:
+    plan = ResearchPlan(
+        topic="Agentic RAG",
+        objective="研究 Agentic RAG",
+        sub_questions=["Agentic RAG 是什么？"],
+        search_queries=["Agentic RAG"],
+    )
+
+    fake_graph = Mock()
+    fake_graph.ainvoke = AsyncMock(
+        return_value={"plan": plan}
+    )
+    monkeypatch.setattr(
+        "app.services.research.get_research_graph",
+        lambda: fake_graph,
+    )
+
+    request = ResearchRequest(
+        topic="Agentic RAG",
+        knowledge_base_id=1,
+    )
+
+    from app.models.research_task import (
+        ResearchTask,
+        ResearchTaskStatus,
+    )
+
+    task = ResearchTask(
+        id=1,
+        topic="Agentic RAG",
+        knowledge_base_id=1,
+        status=ResearchTaskStatus.PENDING.value,
+    )
+
+    task_repository = Mock()
+    task_repository.create = AsyncMock(return_value=task)
+    task_repository.update_status = AsyncMock()
+    task_repository.save_plan = AsyncMock()
+    task_repository.session = Mock()
+    task_repository.session.commit = AsyncMock()
+
+    report = asyncio.run(
+        start_research(request, task_repository)
+    )
+
+    assert report.topic == "Agentic RAG"
+    assert report.plan == plan
+    assert report.sources == []
+    fake_graph.ainvoke.assert_awaited_once()
+    task_repository.save_plan.assert_awaited_once()
+
+
+def test_approve_research_completes_report(
+        monkeypatch,
+) -> None:
     plan = ResearchPlan(
         topic="Agentic RAG",
         objective="研究 Agentic RAG",
@@ -73,40 +135,83 @@ def test_run_research_returns_report(monkeypatch) -> None:
         lambda: fake_graph,
     )
 
-    request = ResearchRequest(
-        topic="Agentic RAG",
-        knowledge_base_id=1,
+    from app.models.research_task import (
+        ResearchTask,
+        ResearchTaskStatus,
     )
-
-    from app.models.research_task import ResearchTask
-    from app.models.research_task import ResearchTaskStatus
 
     task = ResearchTask(
         id=1,
         topic="Agentic RAG",
         knowledge_base_id=1,
-        status=ResearchTaskStatus.PENDING.value,
+        status=ResearchTaskStatus.AWAITING_APPROVAL.value,
     )
 
     task_repository = Mock()
-    task_repository.create = AsyncMock(return_value=task)
+    task_repository.get_by_id = AsyncMock(
+        return_value=task
+    )
     task_repository.update_status = AsyncMock()
     task_repository.save_report = AsyncMock()
     task_repository.session = Mock()
     task_repository.session.commit = AsyncMock()
 
     report = asyncio.run(
-        run_research(request, task_repository)
+        approve_research(1, True, task_repository)
     )
 
     assert isinstance(report, ResearchReport)
-    assert report.topic == "Agentic RAG"
     assert report.plan == plan
     assert len(report.sources) == 1
-    assert report.sources[0].text == "Agentic RAG 是……"
     assert report.answer == "Agentic RAG 是……"
     fake_graph.ainvoke.assert_awaited_once()
-    task_repository.save_report.assert_awaited_once()
+
+
+def test_approve_research_rejected_marks_failed(
+        monkeypatch,
+) -> None:
+    plan = ResearchPlan(
+        topic="Agentic RAG",
+        objective="研究 Agentic RAG",
+        sub_questions=["Agentic RAG 是什么？"],
+        search_queries=["Agentic RAG"],
+    )
+
+    fake_graph = Mock()
+    fake_graph.ainvoke = AsyncMock(
+        return_value={"plan": plan}
+    )
+    monkeypatch.setattr(
+        "app.services.research.get_research_graph",
+        lambda: fake_graph,
+    )
+
+    from app.models.research_task import (
+        ResearchTask,
+        ResearchTaskStatus,
+    )
+
+    task = ResearchTask(
+        id=1,
+        topic="Agentic RAG",
+        knowledge_base_id=1,
+        status=ResearchTaskStatus.AWAITING_APPROVAL.value,
+    )
+
+    task_repository = Mock()
+    task_repository.get_by_id = AsyncMock(
+        return_value=task
+    )
+    task_repository.update_status = AsyncMock()
+    task_repository.session = Mock()
+    task_repository.session.commit = AsyncMock()
+
+    report = asyncio.run(
+        approve_research(1, False, task_repository)
+    )
+
+    assert report.sources == []
+    task_repository.update_status.assert_awaited()
 
 
 def test_should_continue_enough_sources_reports() -> None:
