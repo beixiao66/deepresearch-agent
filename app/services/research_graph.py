@@ -3,7 +3,9 @@ import logging
 from functools import lru_cache
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 from app.schemas.state import ResearchState
 from app.db.session import AsyncSessionLocal
@@ -49,6 +51,30 @@ async def _plan_research(state: ResearchState) -> dict:
         "plan": plan,
         "knowledge_base_id": state["knowledge_base_id"],
     }
+
+
+def _review_plan(state: ResearchState) -> dict:
+    """审核节点：interrupt 暂停，等用户确认或修改研究计划。
+
+    注意：interrupt 前没有副作用操作（可安全重放）。
+    """
+    user_review = interrupt(
+        {
+            "title": "研究计划审核",
+            "question": state["question"],
+            "sub_questions": state["plan"].sub_questions,
+            "search_queries": state["plan"].search_queries,
+        }
+    )
+
+    approved = bool(user_review.get("approved"))
+
+    if not approved:
+        raise ValueError(
+            "Research plan rejected by user"
+        )
+
+    return {"plan": state["plan"]}
 
 
 async def _retrieve(state: ResearchState) -> dict:
@@ -196,16 +222,18 @@ async def _report(state: ResearchState) -> dict:
 
 
 def build_research_graph():
-    """构建 LangGraph 主流程：规划 -> 检索 -> (条件判断循环) -> 报告。"""
+    """构建 LangGraph 主流程：规划 -> 审核(人工确认) -> 检索 -> (条件循环) -> 报告。"""
     graph = StateGraph(ResearchState)
 
     graph.add_node("plan", _plan_research)
+    graph.add_node("review", _review_plan)
     graph.add_node("retrieve", _retrieve)
     graph.add_node("next_queries", _next_queries)
     graph.add_node("report", _report)
 
     graph.add_edge(START, "plan")
-    graph.add_edge("plan", "retrieve")
+    graph.add_edge("plan", "review")
+    graph.add_edge("review", "retrieve")
     graph.add_conditional_edges(
         "retrieve",
         _should_continue,
@@ -217,4 +245,7 @@ def build_research_graph():
     graph.add_edge("next_queries", "retrieve")
     graph.add_edge("report", END)
 
-    return graph.compile()
+    # interrupt 需要 checkpoint 保存执行现场
+    checkpointer = MemorySaver()
+
+    return graph.compile(checkpointer=checkpointer)

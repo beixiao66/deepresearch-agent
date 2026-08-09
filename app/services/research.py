@@ -1,5 +1,7 @@
 import logging
 
+from langgraph.types import Command
+
 from app.models.research_task import ResearchTaskStatus
 from app.repositories.research_task import ResearchTaskRepository
 from app.schemas.research_report import (
@@ -22,20 +24,30 @@ def get_research_graph():
     return _research_graph
 
 
-async def run_research(
+def _build_thread_id(task_id: int) -> dict:
+    """构建 checkpoint 的 thread 配置。
+
+    thread_id 用任务 id，保证暂停后能用同一 thread 恢复执行现场。
+    """
+    return {
+        "configurable": {
+            "thread_id": f"research-{task_id}",
+        }
+    }
+
+
+async def start_research(
         request: ResearchRequest,
         task_repository: ResearchTaskRepository,
 ) -> ResearchReport:
-    """执行研究任务，并把状态持久化到 research_tasks 表。
-
-    状态流转：pending(创建时) -> running(开始执行) -> completed/failed。
-    """
+    """阶段一：创建任务，跑图到计划审核点暂停。"""
     task = await task_repository.create(
         topic=request.topic,
         knowledge_base_id=request.knowledge_base_id,
     )
-
     await task_repository.session.commit()
+
+    graph = get_research_graph()
 
     try:
         await task_repository.update_status(
@@ -44,13 +56,103 @@ async def run_research(
         )
         await task_repository.session.commit()
 
-        graph = get_research_graph()
+        # 第一次 invoke：图跑到 review 节点的 interrupt 处暂停
+        # ainvoke 返回中断时的状态快照（含 plan）
         result = await graph.ainvoke(
             {
                 "question": request.topic,
                 "knowledge_base_id": request.knowledge_base_id,
-            }
+            },
+            config=_build_thread_id(task.id),
         )
+
+        plan = result.get("plan")
+
+        await task_repository.save_plan(
+            task,
+            plan=(
+                plan.model_dump_json()
+                if plan is not None
+                else None
+            ),
+            thread_id=f"research-{task.id}",
+        )
+        await task_repository.session.commit()
+
+        logger.info(
+            "research paused at plan review: task_id=%d",
+            task.id,
+        )
+    except Exception as exc:
+        await task_repository.update_status(
+            task,
+            ResearchTaskStatus.FAILED,
+            error_message=str(exc),
+        )
+        await task_repository.session.commit()
+        logger.error(
+            "research start failed: task_id=%d, error=%s",
+            task.id,
+            exc,
+            exc_info=True,
+        )
+        raise
+
+    return ResearchReport(
+        topic=request.topic,
+        plan=plan,
+        sources=[],
+        answer="",
+    )
+
+
+async def approve_research(
+        task_id: int,
+        approved: bool,
+        task_repository: ResearchTaskRepository,
+) -> ResearchReport:
+    """阶段二：用户确认计划后，恢复图执行检索与报告。"""
+    task = await task_repository.get_by_id(task_id)
+
+    if task is None:
+        from app.core.exceptions import DocumentNotFoundError
+        raise DocumentNotFoundError(task_id)
+
+    if task.status != ResearchTaskStatus.AWAITING_APPROVAL.value:
+        raise ValueError(
+            f"Task is not awaiting approval: {task.status}"
+        )
+
+    graph = get_research_graph()
+
+    try:
+        await task_repository.update_status(
+            task,
+            ResearchTaskStatus.RUNNING,
+        )
+        await task_repository.session.commit()
+
+        # 第二次 invoke：Command(resume=...) 从 interrupt 处恢复
+        result = await graph.ainvoke(
+            Command(resume={"approved": approved}),
+            config=_build_thread_id(task.id),
+        )
+
+        if not approved:
+            # 拒绝：标记 failed（或者可以有 rejected 状态）
+            await task_repository.update_status(
+                task,
+                ResearchTaskStatus.FAILED,
+                error_message="Research plan rejected by user",
+            )
+            await task_repository.session.commit()
+
+            return ResearchReport(
+                topic=task.topic,
+                plan=result["plan"],
+                sources=[],
+                answer="",
+            )
 
         sources = [
             {
@@ -64,7 +166,7 @@ async def run_research(
         ]
 
         report = ResearchReport(
-            topic=request.topic,
+            topic=task.topic,
             plan=result["plan"],
             sources=sources,
             answer=result["answer"],

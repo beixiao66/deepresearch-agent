@@ -40,7 +40,7 @@ def test_research_returns_mocked_report(monkeypatch) -> None:
 
     mock_run = AsyncMock(return_value=report)
     monkeypatch.setattr(
-        "app.api.routes.research.run_research",
+        "app.api.routes.research.start_research",
         mock_run,
     )
 
