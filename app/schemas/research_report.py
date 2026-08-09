@@ -46,6 +46,7 @@ class ResearchReport(BaseModel):
     plan: ResearchPlan
     sources: list[SourceItem]
     answer: str
+    task_id: int | None = None
 
 
 class ResearchTaskResponse(BaseModel):

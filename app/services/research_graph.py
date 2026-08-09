@@ -29,6 +29,20 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# 进度事件钩子：SSE 时由服务层替换为实际发事件的回调
+_progress_hook = None
+
+
+def set_progress_hook(hook) -> None:
+    """设置进度回调（接收 dict 事件）。SSE 流用，测试/普通调用不设。"""
+    global _progress_hook
+    _progress_hook = hook
+
+
+def _emit(event: dict) -> None:
+    if _progress_hook is not None:
+        _progress_hook(event)
+
 
 @lru_cache
 def get_retriever() -> DocumentRetriever:
@@ -48,7 +62,9 @@ def get_retriever() -> DocumentRetriever:
 async def _plan_research(state: ResearchState) -> dict:
     """规划节点：把研究主题拆分为子问题与检索关键词。"""
     logger.info("plan node: %s", state["question"])
+    _emit({"type": "status", "message": "正在生成研究计划..."})
     plan = await generate_research_plan(state["question"])
+    _emit({"type": "status", "message": "研究计划已生成"})
     return {
         "plan": plan,
         "knowledge_base_id": state["knowledge_base_id"],
@@ -83,6 +99,7 @@ def _review_plan(state: ResearchState) -> dict:
 async def _retrieve(state: ResearchState) -> dict:
     """检索节点：根据规划产出的关键词查询向量库，收集资料片段。"""
     logger.info("retrieve node: round %d", state.get("retrieval_round", 0) + 1)
+    _emit({"type": "status", "message": "正在检索知识库..."})
     sources: list[dict] = []
 
     queries = state["plan"].search_queries
@@ -150,6 +167,7 @@ async def _retrieve(state: ResearchState) -> dict:
             logger.info(
                 "knowledge base evidence insufficient, searching web"
             )
+            _emit({"type": "status", "message": "知识库资料不足，正在联网搜索..."})
             for query in queries:
                 web_results = await anyio.to_thread.run_sync(
                     search_web,
@@ -264,6 +282,7 @@ def _should_continue(state: ResearchState) -> str:
 async def _report(state: ResearchState) -> dict:
     """报告节点：结合检索到的资料，生成最终研究报告。"""
     logger.info("report node")
+    _emit({"type": "status", "message": "正在生成研究报告..."})
 
     if state.get("sources"):
         sources_text = "\n".join(

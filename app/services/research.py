@@ -104,6 +104,7 @@ async def start_research(
         plan=plan,
         sources=[],
         answer="",
+        task_id=task.id,
     )
 
 
@@ -176,6 +177,7 @@ async def approve_research(
             plan=result["plan"],
             sources=sources,
             answer=result["answer"],
+            task_id=task.id,
         )
 
         await task_repository.save_report(
