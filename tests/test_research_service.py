@@ -77,7 +77,27 @@ def test_run_research_returns_report(monkeypatch) -> None:
         topic="Agentic RAG",
         knowledge_base_id=1,
     )
-    report = asyncio.run(run_research(request))
+
+    from app.models.research_task import ResearchTask
+    from app.models.research_task import ResearchTaskStatus
+
+    task = ResearchTask(
+        id=1,
+        topic="Agentic RAG",
+        knowledge_base_id=1,
+        status=ResearchTaskStatus.PENDING.value,
+    )
+
+    task_repository = Mock()
+    task_repository.create = AsyncMock(return_value=task)
+    task_repository.update_status = AsyncMock()
+    task_repository.save_report = AsyncMock()
+    task_repository.session = Mock()
+    task_repository.session.commit = AsyncMock()
+
+    report = asyncio.run(
+        run_research(request, task_repository)
+    )
 
     assert isinstance(report, ResearchReport)
     assert report.topic == "Agentic RAG"
@@ -86,6 +106,7 @@ def test_run_research_returns_report(monkeypatch) -> None:
     assert report.sources[0].text == "Agentic RAG 是……"
     assert report.answer == "Agentic RAG 是……"
     fake_graph.ainvoke.assert_awaited_once()
+    task_repository.save_report.assert_awaited_once()
 
 
 def test_should_continue_enough_sources_reports() -> None:
