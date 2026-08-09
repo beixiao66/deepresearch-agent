@@ -101,7 +101,7 @@ cd ..
 ### 2. 配置环境变量
 
 ```bash
-cp .env-example .env
+cp .env.example .env
 # 填入：
 # DASHSCOPE_API_KEY=你的百炼 API Key（阿里云百炼控制台）
 # TAVILY_API_KEY=你的 Tavily API Key（https://tavily.com）
