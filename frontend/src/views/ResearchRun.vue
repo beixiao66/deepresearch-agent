@@ -16,7 +16,6 @@ const currentMessage = ref("正在加载研究任务...")
 const progress = ref(0)
 const currentStage = ref(0)
 const completed = ref(false)
-const cancelled = ref(false)
 
 const statusLabel = {
   pending: "待处理",
@@ -88,7 +87,6 @@ function updateProgress(event) {
     currentStage.value = 0
     progress.value = 0
     completed.value = false
-    cancelled.value = true
     currentMessage.value = event.message || "用户已取消此次研究任务"
   }
   if (event.type === "completed") {
@@ -155,7 +153,6 @@ async function loadTask() {
       awaitingApproval.value = false
       currentStage.value = 0
       progress.value = 0
-      cancelled.value = true
       currentMessage.value = task.value.error_message || "用户已取消此次研究任务"
     } else if (task.value.status === "completed") {
       currentStage.value = 4
@@ -287,9 +284,6 @@ onMounted(loadTask)
         <span v-else-if="event.type === 'task_created'">
           任务已创建（#{{ event.task_id }}）
         </span>
-        <span v-else-if="event.type === 'cancelled'">
-          {{ event.message }}
-        </span>
         <span v-else-if="event.type === 'completed'">
           研究完成！
         </span>
@@ -298,10 +292,6 @@ onMounted(loadTask)
         </span>
       </div>
     </div>
-
-    <p v-if="cancelled" class="cancelled-message">
-      用户已取消此次研究任务
-    </p>
 
     <p v-if="completed" class="report-link">
       研究已完成，
@@ -441,10 +431,6 @@ onMounted(loadTask)
 .event-dot {
   margin-right: 8px;
   color: #4caf50;
-}
-.cancelled-message {
-  margin-top: 16px;
-  color: #616161;
 }
 .report-link {
   margin-top: 16px;
