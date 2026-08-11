@@ -1,9 +1,10 @@
 <script setup>
 import { onMounted, ref } from "vue"
-import { useRoute } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
 import { streamApprove, listResearchTasks } from "../api"
 
 const route = useRoute()
+const router = useRouter()
 
 const taskId = route.params.taskId
 const task = ref(null)
@@ -41,9 +42,9 @@ function updateProgress(event) {
   if (event.type === "status") {
     const stageProgress = {
       plan: 25,
-      review: 35,
-      retrieve: 55,
-      report: 85,
+      review: 50,
+      retrieve: 75,
+      report: 100,
     }
     if (event.stage && stageProgress[event.stage]) {
       const stageIndex = {
@@ -66,13 +67,13 @@ function updateProgress(event) {
     if (event.message.includes("生成研究计划")) {
       progress.value = 25
     } else if (event.message.includes("研究计划已生成")) {
-      progress.value = 35
+      progress.value = 50
     } else if (event.message.includes("检索知识库")) {
-      progress.value = 55
+      progress.value = 75
     } else if (event.message.includes("联网搜索")) {
-      progress.value = 65
+      progress.value = 75
     } else if (event.message.includes("生成研究报告")) {
-      progress.value = 85
+      progress.value = 100
     }
   }
 
@@ -81,7 +82,7 @@ function updateProgress(event) {
   }
   if (event.type === "awaiting_approval") {
     currentStage.value = 2
-    progress.value = 35
+    progress.value = 50
   }
   if (event.type === "cancelled") {
     currentStage.value = 0
@@ -122,6 +123,7 @@ function pushEvent(event) {
   }
   if (event.type === "completed") {
     task.value.status = "completed"
+    router.push(`/research/report/${taskId}`)
   }
   if (event.type === "error") {
     task.value.status = "failed"
@@ -142,7 +144,7 @@ async function loadTask() {
     if (task.value.status === "awaiting_approval") {
       awaitingApproval.value = true
       currentStage.value = 2
-      progress.value = 35
+      progress.value = 50
       currentMessage.value = "研究计划已生成，等待确认"
       try {
         plan.value = JSON.parse(task.value.plan)
@@ -173,7 +175,7 @@ async function onApprove(approved) {
   error.value = ""
   awaitingApproval.value = false
   currentStage.value = approved ? 3 : 0
-  progress.value = approved ? 55 : 0
+  progress.value = approved ? 75 : 0
   currentMessage.value = approved ? "正在检索资料..." : "正在取消研究任务..."
   if (approved && task.value) {
     task.value.status = "running"
@@ -292,13 +294,6 @@ onMounted(loadTask)
         </span>
       </div>
     </div>
-
-    <p v-if="completed" class="report-link">
-      研究已完成，
-      <router-link :to="`/research/report/${taskId}`">
-        查看研究报告
-      </router-link>
-    </p>
 
     <p v-if="error" class="error">{{ error }}</p>
   </div>
@@ -431,14 +426,6 @@ onMounted(loadTask)
 .event-dot {
   margin-right: 8px;
   color: #4caf50;
-}
-.report-link {
-  margin-top: 16px;
-  color: #2e7d32;
-}
-.report-link a {
-  color: #1976d2;
-  font-weight: 600;
 }
 .error {
   color: #c62828;
