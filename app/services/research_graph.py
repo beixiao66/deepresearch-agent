@@ -16,7 +16,11 @@ from app.services.document_embedder import (
     get_embedding_client,
 )
 from app.services.document_retriever import DocumentRetriever
-from app.services.llm import get_llm
+from app.services.llm import (
+    generate_follow_up_queries,
+    generate_report,
+    get_llm,
+)
 from app.services.planner import generate_research_plan
 from app.services.qdrant_store import (
     QdrantStore,
@@ -67,7 +71,15 @@ async def _plan_research(state: ResearchState) -> dict:
         "stage": "plan",
         "message": "正在生成研究计划...",
     })
-    plan = await generate_research_plan(state["question"])
+    plan_counters = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    plan = await generate_research_plan(
+        state["question"],
+        plan_counters,
+    )
     _emit({
         "type": "status",
         "stage": "plan",
@@ -77,6 +89,10 @@ async def _plan_research(state: ResearchState) -> dict:
         "plan": plan,
         "knowledge_base_id": state["knowledge_base_id"],
         "use_web_search": state.get("use_web_search", False),
+        "token_usage": {
+            **state.get("token_usage", {}),
+            "plan": plan_counters,
+        },
     }
 
 
@@ -213,31 +229,26 @@ async def _retrieve(state: ResearchState) -> dict:
 async def _next_queries(state: ResearchState) -> dict:
     """补充查询节点：检索不足时，让 LLM 生成新一轮更精准的查询词。"""
     logger.info("next_queries node: generating follow-up queries")
-    messages = [
-        SystemMessage(
-            content=(
-                "你是研究助手。当前检索到的资料不足以回答研究问题，"
-                "请生成3个与问题相关的补充检索关键词，"
-                "每个关键词独立一行，不要编号。"
-            )
-        ),
-        HumanMessage(
-            content=(
-                f"研究问题：{state['question']}\n"
-                f"当前已检索：{len(state.get('sources', []))} 条资料"
-            )
-        ),
-    ]
-
-    response = await get_llm().ainvoke(messages)
-    new_queries = [
-        line.strip()
-        for line in str(response.content).splitlines()
-        if line.strip()
-    ][:3]
+    query_counters = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    new_queries = await generate_follow_up_queries(
+        state["question"],
+        len(state.get("sources", [])),
+        query_counters,
+    )
 
     logger.info("follow-up queries: %s", new_queries)
-    return {"next_queries": new_queries}
+    return {
+        "next_queries": new_queries,
+        "token_usage": {
+            **state.get("token_usage", {}),
+            "next_queries": query_counters,
+        },
+    }
+
 
 
 def _should_continue(state: ResearchState) -> str:
@@ -331,24 +342,23 @@ async def _report(state: ResearchState) -> dict:
     )
     context = f"检索资料：\n{sources_text}"
 
-    messages = [
-        SystemMessage(
-            content=(
-                "你是一名研究助手。请基于用户问题与检索到的资料，"
-                "生成结构清晰、有据可依的研究报告。"
-                "报告应包含：结论、关键证据（引用编号）、局限与参考来源。"
-            )
-        ),
-        HumanMessage(
-            content=(
-                f"研究问题：{state['question']}\n\n"
-                f"{context}"
-            )
-        ),
-    ]
-
-    response = await get_llm().ainvoke(messages)
-    return {"answer": response.content}
+    report_counters = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    answer = await generate_report(
+        state["question"],
+        context,
+        report_counters,
+    )
+    return {
+        "answer": answer,
+        "token_usage": {
+            **state.get("token_usage", {}),
+            "report": report_counters,
+        },
+    }
 
 
 def build_research_graph():
