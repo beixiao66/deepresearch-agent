@@ -58,6 +58,12 @@ export async function createKnowledgeBase(name, description) {
   return response.json()
 }
 
+export async function deleteKnowledgeBase(knowledgeBaseId) {
+  await request(`/knowledge-bases/${knowledgeBaseId}`, {
+    method: "DELETE",
+  })
+}
+
 export async function listDocuments(knowledgeBaseId) {
   const response = await request(
     `/knowledge-bases/${knowledgeBaseId}/documents`

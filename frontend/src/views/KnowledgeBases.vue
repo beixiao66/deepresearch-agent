@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue"
 import {
   listKnowledgeBases,
   createKnowledgeBase,
+  deleteKnowledgeBase,
   listDocuments,
   uploadDocument,
   retryDocument,
@@ -31,6 +32,20 @@ async function selectBase(id) {
   selectedId.value = id
   try {
     documents.value = await listDocuments(id)
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function onDeleteKnowledgeBase(id) {
+  if (!confirm("确定删除该知识库？其下所有文档、向量和索引将一并删除。")) return
+  try {
+    await deleteKnowledgeBase(id)
+    if (selectedId.value === id) {
+      selectedId.value = null
+      documents.value = []
+    }
+    await loadBases()
   } catch (e) {
     error.value = e.message
   }
@@ -121,6 +136,12 @@ onMounted(loadBases)
           >
             <strong>{{ kb.name }}</strong>
             <span class="kb-desc">{{ kb.description }}</span>
+            <button
+              class="kb-delete"
+              @click.stop="onDeleteKnowledgeBase(kb.id)"
+            >
+              删除
+            </button>
           </li>
         </ul>
 
@@ -236,6 +257,13 @@ onMounted(loadBases)
 .kb-desc {
   font-size: 12px;
   color: #777;
+}
+.kb-delete {
+  margin-top: 4px;
+  align-self: flex-start;
+  padding: 2px 10px;
+  font-size: 12px;
+  background: #d32f2f;
 }
 .create-form {
   display: flex;

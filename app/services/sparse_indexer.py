@@ -82,3 +82,17 @@ class SparseIndexer:
             {"document_id": document_id},
         )
         await self.session.commit()
+
+    async def delete_knowledge_base(
+            self,
+            knowledge_base_id: int,
+    ) -> None:
+        """删除知识库在 FTS5 中的全部记录。"""
+        await self.session.execute(
+            text(
+                f"DELETE FROM {FTS_TABLE} "
+                "WHERE knowledge_base_id = :knowledge_base_id"
+            ),
+            {"knowledge_base_id": knowledge_base_id},
+        )
+        await self.session.commit()
