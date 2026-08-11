@@ -134,8 +134,10 @@ onMounted(loadBases)
             :class="{ active: kb.id === selectedId }"
             @click="selectBase(kb.id)"
           >
-            <strong>{{ kb.name }}</strong>
-            <span class="kb-desc">{{ kb.description }}</span>
+            <div class="kb-info">
+              <strong>{{ kb.name }}</strong>
+              <span class="kb-desc">{{ kb.description }}</span>
+            </div>
             <button
               class="kb-delete"
               @click.stop="onDeleteKnowledgeBase(kb.id)"
@@ -245,8 +247,15 @@ onMounted(loadBases)
   border-radius: 6px;
   cursor: pointer;
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.kb-info {
+  display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 .kb-list li:hover {
   background: #f0f4ff;
@@ -259,8 +268,7 @@ onMounted(loadBases)
   color: #777;
 }
 .kb-delete {
-  margin-top: 4px;
-  align-self: flex-start;
+  flex-shrink: 0;
   padding: 2px 10px;
   font-size: 12px;
   background: #d32f2f;
