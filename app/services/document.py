@@ -3,16 +3,16 @@ import logging
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import KnowledgeBaseNotFoundError, DocumentNotFoundError
+from app.core.exceptions import (
+    DocumentNotFoundError,
+    KnowledgeBaseNotFoundError,
+)
 from app.models.document import Document, DocumentStatus
 from app.repositories.document import DocumentRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
-from app.services.file_storage import FileStorageService
 from app.services.document_indexer import DocumentIndexer
+from app.services.file_storage import FileStorageService
 from app.services.qdrant_store import QdrantStore
-from app.services.document_embedder import DocumentEmbedder
-from app.services.document_parser import DocumentParser
-from app.services.document_splitter import DocumentSplitter
 from app.services.sparse_indexer import SparseIndexer
 
 logger = logging.getLogger(__name__)
@@ -147,6 +147,43 @@ class DocumentService:
         sparse_indexer = SparseIndexer(self.session)
         await sparse_indexer.delete_document(document_id)
 
+    async def retry_document(
+            self,
+            knowledge_base_id: int,
+            document_id: int,
+    ) -> Document:
+        knowledge_base = (
+            await self.knowledge_base_repository.get_by_id(
+                knowledge_base_id
+            )
+        )
+
+        if knowledge_base is None:
+            raise KnowledgeBaseNotFoundError(
+                knowledge_base_id
+            )
+
+        document = (
+            await self.document_repository.get_by_id(
+                knowledge_base_id,
+                document_id,
+            )
+        )
+
+        if document is None:
+            raise DocumentNotFoundError(document_id)
+
+        if document.status != DocumentStatus.FAILED.value:
+            return document
+
+        await self._index_document_content(
+            knowledge_base_id=knowledge_base_id,
+            document=document,
+            raise_on_error=True,
+        )
+        await self.session.refresh(document)
+        return document
+
     async def index_document(
             self,
             knowledge_base_id: int,
@@ -212,10 +249,11 @@ class DocumentService:
 
         return point_count
 
-    async def _index_after_upload(
+    async def _index_document_content(
             self,
             knowledge_base_id: int,
             document: Document,
+            raise_on_error: bool,
     ) -> None:
         try:
             await self.document_repository.update_status(
@@ -257,3 +295,16 @@ class DocumentService:
                 exc,
                 exc_info=True,
             )
+            if raise_on_error:
+                raise
+
+    async def _index_after_upload(
+            self,
+            knowledge_base_id: int,
+            document: Document,
+    ) -> None:
+        await self._index_document_content(
+            knowledge_base_id=knowledge_base_id,
+            document=document,
+            raise_on_error=False,
+        )

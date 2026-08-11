@@ -24,6 +24,23 @@ async def upload_document(
     return DocumentResponse.model_validate(document)
 
 
+@router.post(
+    "/{document_id}/retry",
+    response_model=DocumentResponse,
+)
+async def retry_document(
+    knowledge_base_id: int = Path(gt=0),
+    document_id: int = Path(gt=0),
+    document_service: DocumentServiceDependency = None,
+) -> DocumentResponse:
+    document = await document_service.retry_document(
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+    )
+
+    return DocumentResponse.model_validate(document)
+
+
 @router.get(
     "",
     response_model=list[DocumentResponse],
