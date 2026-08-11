@@ -197,7 +197,6 @@ onMounted(loadBases)
         </p>
         <p v-else class="hint">请选择左侧知识库</p>
 
-        <p v-if="error" class="error">{{ error }}</p>
       </div>
     </div>
   </div>
@@ -303,8 +302,5 @@ button:disabled {
 }
 .hint {
   color: #999;
-}
-.error {
-  color: #c62828;
 }
 </style>
