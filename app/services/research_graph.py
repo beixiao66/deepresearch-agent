@@ -285,6 +285,10 @@ def _should_continue(state: ResearchState) -> str:
         logger.info("max rounds reached (%d), report", round_count)
         return "report"
 
+    if not sources and not state.get("use_web_search", False):
+        logger.info("no local evidence and web search disabled, report")
+        return "report"
+
     return "next_queries"
 
     if round_count >= MAX_ROUNDS:
@@ -304,19 +308,28 @@ async def _report(state: ResearchState) -> dict:
         "message": "正在生成研究报告...",
     })
 
-    if state.get("sources"):
-        sources_text = "\n".join(
-            f"[{index}] {source['text']}"
-            for index, source in enumerate(
-                state["sources"],
-                start=1,
+    sources = state.get("sources", [])
+    if not sources:
+        logger.info("no evidence available, returning insufficient-data report")
+        return {
+            "answer": (
+                "## 暂无足够资料\n\n"
+                "当前知识库中没有检索到与该问题相关的内容，"
+                "因此无法基于可靠证据生成研究结论。\n\n"
+                "请先向知识库上传相关文档，或在创建研究任务时开启"
+                "“知识库不足时允许联网搜索”后重试。\n\n"
+                "> 本次未使用模型自身知识补充答案，以避免生成未经资料支持的内容。"
             )
+        }
+
+    sources_text = "\n".join(
+        f"[{index}] {source['text']}"
+        for index, source in enumerate(
+            sources,
+            start=1,
         )
-        context = (
-            f"检索资料：\n{sources_text}"
-        )
-    else:
-        context = "（没有检索到资料，请基于自身知识作答）"
+    )
+    context = f"检索资料：\n{sources_text}"
 
     messages = [
         SystemMessage(
