@@ -67,6 +67,11 @@ onMounted(loadTask)
       </router-link>
     </div>
 
+    <div v-if="task && task.status === 'cancelled'" class="cancelled-box">
+      <h3>研究已取消</h3>
+      <p>{{ task.error_message || "用户已取消此次研究任务" }}</p>
+    </div>
+
     <div v-if="task && task.status === 'failed'" class="error-box">
       <h3>研究失败</h3>
       <p>{{ task.error_message }}</p>
@@ -125,6 +130,13 @@ onMounted(loadTask)
 }
 .error {
   color: #c62828;
+}
+.cancelled-box {
+  background: #f5f5f5;
+  border: 1px solid #bdbdbd;
+  border-radius: 8px;
+  padding: 16px;
+  color: #424242;
 }
 .error-box {
   background: #ffebee;

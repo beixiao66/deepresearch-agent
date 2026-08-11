@@ -168,7 +168,7 @@ def test_approve_research_completes_report(
     fake_graph.ainvoke.assert_awaited_once()
 
 
-def test_approve_research_rejected_marks_failed(
+def test_approve_research_cancelled_marks_cancelled(
         monkeypatch,
 ) -> None:
     plan = ResearchPlan(
@@ -197,6 +197,7 @@ def test_approve_research_rejected_marks_failed(
         topic="Agentic RAG",
         knowledge_base_id=1,
         status=ResearchTaskStatus.AWAITING_APPROVAL.value,
+        plan=plan.model_dump_json(),
     )
 
     task_repository = Mock()
@@ -212,7 +213,9 @@ def test_approve_research_rejected_marks_failed(
     )
 
     assert report.sources == []
-    task_repository.update_status.assert_awaited()
+    status_call = task_repository.update_status.await_args_list[-1]
+    assert status_call.args[1] == ResearchTaskStatus.CANCELLED
+    assert status_call.kwargs["error_message"] == "用户已取消此次研究任务"
 
 
 def test_report_without_sources_does_not_call_llm(

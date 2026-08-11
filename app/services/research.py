@@ -8,6 +8,7 @@ from app.core.exceptions import (
 )
 from app.models.research_task import ResearchTaskStatus
 from app.repositories.research_task import ResearchTaskRepository
+from app.schemas.research import ResearchPlan
 from app.schemas.research_report import (
     ResearchReport,
     ResearchRequest,
@@ -129,6 +130,22 @@ async def approve_research(
             task.status,
         )
 
+    if not approved:
+        await task_repository.update_status(
+            task,
+            ResearchTaskStatus.CANCELLED,
+            error_message="用户已取消此次研究任务",
+        )
+        await task_repository.session.commit()
+
+        return ResearchReport(
+            topic=task.topic,
+            plan=ResearchPlan.model_validate_json(task.plan),
+            sources=[],
+            answer="",
+            task_id=task.id,
+        )
+
     graph = get_research_graph()
 
     try:
@@ -143,22 +160,6 @@ async def approve_research(
             Command(resume={"approved": approved}),
             config=_build_thread_id(task.id),
         )
-
-        if not approved:
-            # 拒绝：标记 failed（或者可以有 rejected 状态）
-            await task_repository.update_status(
-                task,
-                ResearchTaskStatus.FAILED,
-                error_message="研究计划已被拒绝",
-            )
-            await task_repository.session.commit()
-
-            return ResearchReport(
-                topic=task.topic,
-                plan=result["plan"],
-                sources=[],
-                answer="",
-            )
 
         sources = [
             {
