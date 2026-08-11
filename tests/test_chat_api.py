@@ -131,7 +131,7 @@ def test_chat_maps_authentication_error_to_502(monkeypatch) -> None:
     assert response.json() == {
         "error": {
             "code": "MODEL_AUTHENTICATION_FAILED",
-            "message": "Model service authentication failed",
+            "message": "模型服务认证失败，请联系管理员检查配置",
         }
     }
     mock_llm.ainvoke.assert_awaited_once()
@@ -171,7 +171,7 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
     assert response.json() == {
         "error": {
             "code": "MODEL_RATE_LIMITED",
-            "message": "Model service is temporarily busy",
+            "message": "模型服务当前繁忙，请稍后重试",
         }
     }
     mock_llm.ainvoke.assert_awaited_once()
@@ -193,7 +193,7 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
             ),
             504,
             "MODEL_TIMEOUT",
-            "Model service timed out",
+            "模型服务响应超时，请稍后重试",
         ),
         (
             APIConnectionError(
@@ -204,7 +204,7 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
             ),
             503,
             "MODEL_CONNECTION_FAILED",
-            "Unable to connect to model service",
+            "暂时无法连接模型服务，请稍后重试",
         ),
         (
             APIStatusError(
@@ -220,7 +220,7 @@ def test_chat_maps_rate_limit_error_to_503(monkeypatch) -> None:
             ),
             502,
             "MODEL_SERVICE_ERROR",
-            "Model service returned an error",
+            "模型服务处理失败，请稍后重试",
         ),
     ],
 )

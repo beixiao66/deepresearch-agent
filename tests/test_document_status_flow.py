@@ -152,7 +152,7 @@ def test_upload_index_failure_marks_failed() -> None:
 
         # 索引失败：processing -> failed，且记录错误信息
         assert status_history[-1] == DocumentStatus.FAILED.value
-        assert document.error_message == "embedding failed"
+        assert document.error_message == "文档处理失败，请重试或重新上传"
         # 上传本身不抛错（索引失败已吞掉，文档保留为 failed）
         assert document.status == DocumentStatus.FAILED.value
 
@@ -265,6 +265,6 @@ def test_index_document_failure_marks_failed_and_raises() -> None:
 
         # processing -> failed，且异常继续上抛
         assert status_history[-1] == DocumentStatus.FAILED.value
-        assert document.error_message == "qdrant down"
+        assert document.error_message == "文档处理失败，请重试或重新上传"
 
     asyncio.run(run_test())

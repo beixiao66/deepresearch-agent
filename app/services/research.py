@@ -2,6 +2,10 @@ import logging
 
 from langgraph.types import Command
 
+from app.core.exceptions import (
+    ResearchTaskInvalidStateError,
+    ResearchTaskNotFoundError,
+)
 from app.models.research_task import ResearchTaskStatus
 from app.repositories.research_task import ResearchTaskRepository
 from app.schemas.research_report import (
@@ -88,7 +92,7 @@ async def start_research(
         await task_repository.update_status(
             task,
             ResearchTaskStatus.FAILED,
-            error_message=str(exc),
+            error_message="研究任务执行失败，请稍后重试",
         )
         await task_repository.session.commit()
         logger.error(
@@ -117,12 +121,12 @@ async def approve_research(
     task = await task_repository.get_by_id(task_id)
 
     if task is None:
-        from app.core.exceptions import DocumentNotFoundError
-        raise DocumentNotFoundError(task_id)
+        raise ResearchTaskNotFoundError(task_id)
 
     if task.status != ResearchTaskStatus.AWAITING_APPROVAL.value:
-        raise ValueError(
-            f"Task is not awaiting approval: {task.status}"
+        raise ResearchTaskInvalidStateError(
+            task_id,
+            task.status,
         )
 
     graph = get_research_graph()
@@ -145,7 +149,7 @@ async def approve_research(
             await task_repository.update_status(
                 task,
                 ResearchTaskStatus.FAILED,
-                error_message="Research plan rejected by user",
+                error_message="研究计划已被拒绝",
             )
             await task_repository.session.commit()
 
@@ -198,7 +202,7 @@ async def approve_research(
         await task_repository.update_status(
             task,
             ResearchTaskStatus.FAILED,
-            error_message=str(exc),
+            error_message="研究任务执行失败，请稍后重试",
         )
         await task_repository.session.commit()
         logger.error(

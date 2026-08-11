@@ -242,7 +242,7 @@ class DocumentService:
             await self.document_repository.update_status(
                 document,
                 DocumentStatus.FAILED,
-                error_message=str(exc),
+                error_message="文档处理失败，请重试或重新上传",
             )
             await self.session.commit()
             raise
@@ -286,7 +286,7 @@ class DocumentService:
             await self.document_repository.update_status(
                 document,
                 DocumentStatus.FAILED,
-                error_message=str(exc),
+                error_message="文档处理失败，请重试或重新上传",
             )
             await self.session.commit()
             logger.error(
