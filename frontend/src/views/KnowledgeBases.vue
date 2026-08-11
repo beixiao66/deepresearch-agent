@@ -9,6 +9,8 @@ import {
   deleteDocument,
 } from "../api"
 
+import { showErrorDialog } from "../errorDialog"
+
 const bases = ref([])
 const selectedId = ref(null)
 const documents = ref([])
@@ -18,25 +20,38 @@ const error = ref("")
 const uploading = ref(false)
 
 async function loadBases() {
-  bases.value = await listKnowledgeBases()
+  try {
+    bases.value = await listKnowledgeBases()
+  } catch (e) {
+    error.value = e.message
+  }
 }
 
 async function selectBase(id) {
   selectedId.value = id
-  documents.value = await listDocuments(id)
+  try {
+    documents.value = await listDocuments(id)
+  } catch (e) {
+    error.value = e.message
+  }
 }
 
 async function onCreateBase() {
   error.value = ""
   if (!newName.value.trim()) {
     error.value = "请输入知识库名称"
+    showErrorDialog(error.value)
     return
   }
-  const kb = await createKnowledgeBase(newName.value, newDesc.value)
-  newName.value = ""
-  newDesc.value = ""
-  await loadBases()
-  await selectBase(kb.id)
+  try {
+    const kb = await createKnowledgeBase(newName.value, newDesc.value)
+    newName.value = ""
+    newDesc.value = ""
+    await loadBases()
+    await selectBase(kb.id)
+  } catch (e) {
+    error.value = e.message
+  }
 }
 
 async function onUpload(event) {
@@ -72,8 +87,12 @@ async function onRetry(documentId) {
 
 async function onDeleteDocument(documentId) {
   if (!confirm("确定删除该文档？")) return
-  await deleteDocument(selectedId.value, documentId)
-  documents.value = await listDocuments(selectedId.value)
+  try {
+    await deleteDocument(selectedId.value, documentId)
+    documents.value = await listDocuments(selectedId.value)
+  } catch (e) {
+    error.value = e.message
+  }
 }
 
 const statusLabel = {

@@ -15,16 +15,25 @@ const running = ref(false)
 const error = ref("")
 
 async function loadTask() {
-  const tasks = await listResearchTasks()
-  task.value = tasks.find((t) => String(t.id) === taskId) || null
+  try {
+    const tasks = await listResearchTasks()
+    task.value = tasks.find((t) => String(t.id) === taskId) || null
 
-  if (task.value && task.value.status === "awaiting_approval") {
-    awaitingApproval.value = true
-    try {
-      plan.value = JSON.parse(task.value.plan)
-    } catch {
-      plan.value = null
+    if (!task.value) {
+      error.value = "任务不存在"
+      return
     }
+
+    if (task.value.status === "awaiting_approval") {
+      awaitingApproval.value = true
+      try {
+        plan.value = JSON.parse(task.value.plan)
+      } catch {
+        plan.value = null
+      }
+    }
+  } catch (e) {
+    error.value = e.message
   }
 }
 
