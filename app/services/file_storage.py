@@ -16,6 +16,12 @@ ALLOWED_DOCUMENT_EXTENSIONS = {
       ".pdf",
       ".md",
       ".txt",
+      ".docx",
+      ".html",
+      ".htm",
+      ".xlsx",
+      ".pptx",
+      ".csv",
 }
 
 
