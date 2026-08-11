@@ -4,7 +4,13 @@ import { showErrorDialog } from "./errorDialog"
 const BASE_URL = "http://127.0.0.1:8000/api/v1"
 
 function getErrorMessage(body, fallback) {
-  return body.detail || body.error?.message || fallback
+  if (typeof body?.error?.message === "string") {
+    return body.error.message
+  }
+  if (typeof body?.detail === "string") {
+    return body.detail
+  }
+  return fallback
 }
 
 async function throwRequestError(response, fallback) {
@@ -180,11 +186,18 @@ async function consumeSse(response, onEvent) {
     for (const message of messages) {
       for (const line of message.split("\n")) {
         if (line.startsWith("data: ")) {
+          let event
           try {
-            onEvent(JSON.parse(line.slice(6)))
+            event = JSON.parse(line.slice(6))
           } catch {
-            // 忽略无法解析的事件
+            throw new Error("服务器返回了无法解析的数据")
           }
+          if (event.type === "error") {
+            throw new Error(
+              event.message || "研究任务执行失败，请稍后重试"
+            )
+          }
+          onEvent(event)
         }
       }
     }

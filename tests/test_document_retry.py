@@ -112,6 +112,6 @@ def test_retry_document_keeps_failed_status_when_indexing_fails() -> None:
             assert str(exc) == "qdrant down"
 
         assert document.status == DocumentStatus.FAILED.value
-        assert document.error_message == "qdrant down"
+        assert document.error_message == "文档处理失败，请重试或重新上传"
 
     asyncio.run(run_test())

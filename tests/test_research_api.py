@@ -88,7 +88,7 @@ def test_research_plan_uses_global_model_error_handler(
     assert response.json() == {
         "error": {
             "code": "MODEL_AUTHENTICATION_FAILED",
-            "message": "Model service authentication failed",
+            "message": "模型服务认证失败，请联系管理员检查配置",
         }
     }
     mock_generate_plan.assert_awaited_once_with("Agentic RAG")

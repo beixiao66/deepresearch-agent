@@ -112,7 +112,7 @@ def test_get_knowledge_base_returns_404() -> None:
         assert response.json() == {
             "error": {
                 "code": "KNOWLEDGE_BASE_NOT_FOUND",
-                "message": "Knowledge base not found",
+                "message": "知识库不存在",
             }
         }
         service.get_by_id.assert_awaited_once_with(999)
@@ -139,7 +139,7 @@ def test_create_knowledge_base_returns_409() -> None:
         assert response.json() == {
             "error": {
                 "code": "KNOWLEDGE_BASE_NAME_CONFLICT",
-                "message": "Knowledge base name already exists",
+                "message": "知识库名称已存在",
             }
         }
     finally:

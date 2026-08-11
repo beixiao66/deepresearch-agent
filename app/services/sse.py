@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 
+from app.core.exceptions import get_public_error
 from app.repositories.research_task import ResearchTaskRepository
 from app.schemas.research_report import (
     ResearchRequest,
@@ -59,6 +60,18 @@ async def stream_start_research(
             "type": "awaiting_approval",
             "message": "研究计划已生成，等待确认",
         })
+    except Exception as exc:
+        error = get_public_error(exc)
+        logger.error(
+            "Research start stream failed: error=%s",
+            exc,
+            exc_info=True,
+        )
+        yield format_sse({
+            "type": "error",
+            "code": error.code,
+            "message": error.message,
+        })
 
     finally:
         set_progress_hook(None)
@@ -86,6 +99,19 @@ async def stream_approve_research(
             "type": "completed",
             "task_id": task_id,
             "report": report.answer,
+        })
+    except Exception as exc:
+        error = get_public_error(exc)
+        logger.error(
+            "Research approval stream failed: task_id=%d, error=%s",
+            task_id,
+            exc,
+            exc_info=True,
+        )
+        yield format_sse({
+            "type": "error",
+            "code": error.code,
+            "message": error.message,
         })
 
     finally:

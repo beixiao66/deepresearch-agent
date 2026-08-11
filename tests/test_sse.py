@@ -19,6 +19,34 @@ def test_format_sse_handles_unicode() -> None:
     assert "✅" in message
 
 
+def test_stream_start_research_emits_chinese_error() -> None:
+    async def run_test() -> None:
+        from app.schemas.research_report import ResearchRequest
+
+        async def fake_start(request, task_repository):
+            raise RuntimeError("internal database details")
+
+        import app.services.sse as sse_module
+        original = sse_module.start_research
+        sse_module.start_research = fake_start
+        try:
+            events = []
+            async for chunk in sse_module.stream_start_research(
+                ResearchRequest(topic="RAG", knowledge_base_id=1),
+                Mock(),
+            ):
+                events.append(chunk)
+
+            assert len(events) == 1
+            assert '"type": "error"' in events[0]
+            assert "服务器处理失败，请稍后重试" in events[0]
+            assert "internal database details" not in events[0]
+        finally:
+            sse_module.start_research = original
+
+    asyncio.run(run_test())
+
+
 def test_stream_start_research_emits_events() -> None:
     async def run_test() -> None:
         from app.schemas.research import ResearchPlan

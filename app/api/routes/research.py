@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from app.api.dependencies import (
     ResearchTaskRepositoryDependency,
 )
+from app.core.exceptions import ResearchTaskNotFoundError
 from app.schemas.research import ResearchPlan, ResearchPlanRequest
 from app.schemas.research_report import (
     ApproveRequest,
@@ -81,7 +82,6 @@ async def get_research_task(
     task = await task_repository.get_by_id(task_id)
 
     if task is None:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Research task not found")
+        raise ResearchTaskNotFoundError(task_id)
 
     return ResearchTaskResponse.model_validate(task)
