@@ -5,6 +5,7 @@ import {
   createKnowledgeBase,
   listDocuments,
   uploadDocument,
+  retryDocument,
   deleteDocument,
 } from "../api"
 
@@ -52,6 +53,20 @@ async function onUpload(event) {
   } finally {
     uploading.value = false
     event.target.value = ""
+  }
+}
+
+async function onRetry(documentId) {
+  error.value = ""
+  uploading.value = true
+  try {
+    await retryDocument(selectedId.value, documentId)
+    documents.value = await listDocuments(selectedId.value)
+  } catch (e) {
+    error.value = e.message
+    documents.value = await listDocuments(selectedId.value)
+  } finally {
+    uploading.value = false
   }
 }
 
@@ -141,6 +156,13 @@ onMounted(loadBases)
               </td>
               <td>{{ (doc.file_size / 1024).toFixed(1) }} KB</td>
               <td>
+                <button
+                  v-if="doc.status === 'failed'"
+                  @click="onRetry(doc.id)"
+                  :disabled="uploading"
+                >
+                  重试
+                </button>
                 <button
                   class="danger"
                   @click="onDeleteDocument(doc.id)"
@@ -252,6 +274,13 @@ button {
 }
 button.danger {
   background: #d32f2f;
+}
+.doc-table td button + button {
+  margin-left: 8px;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .hint {
   color: #999;

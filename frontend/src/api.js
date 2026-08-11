@@ -61,6 +61,14 @@ export async function uploadDocument(knowledgeBaseId, file) {
   return response.json()
 }
 
+export async function retryDocument(knowledgeBaseId, documentId) {
+  const response = await request(
+    `/knowledge-bases/${knowledgeBaseId}/documents/${documentId}/retry`,
+    { method: "POST" }
+  )
+  return response.json()
+}
+
 export async function deleteDocument(knowledgeBaseId, documentId) {
   await request(
     `/knowledge-bases/${knowledgeBaseId}/documents/${documentId}`,
