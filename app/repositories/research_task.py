@@ -71,3 +71,10 @@ class ResearchTaskRepository:
     ) -> None:
         task.report = report
         task.status = ResearchTaskStatus.COMPLETED.value
+
+    async def save_token_usage(
+            self,
+            task: ResearchTask,
+            token_usage: str | None,
+    ) -> None:
+        task.token_usage = token_usage

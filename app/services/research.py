@@ -1,3 +1,4 @@
+import json
 import logging
 
 from langgraph.types import Command
@@ -189,6 +190,12 @@ async def approve_research(
             task,
             result["answer"],
         )
+        token_usage = result.get("token_usage")
+        if token_usage:
+            await task_repository.save_token_usage(
+                task,
+                json.dumps(token_usage, ensure_ascii=False),
+            )
         await task_repository.session.commit()
 
         logger.info(

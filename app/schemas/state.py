@@ -16,4 +16,5 @@ class ResearchState(TypedDict):
     answer: str
     retrieval_round: int
     next_queries: list[str]
+    token_usage: dict
     messages: Annotated[list[AnyMessage], add_messages]

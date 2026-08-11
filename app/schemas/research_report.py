@@ -57,6 +57,7 @@ class ResearchTaskResponse(BaseModel):
     plan: str | None = None
     report: str | None = None
     error_message: str | None = None
+    token_usage: str | None = None
 
     model_config = {"from_attributes": True}
 

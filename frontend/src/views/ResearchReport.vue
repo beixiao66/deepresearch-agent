@@ -25,6 +25,50 @@ const webSources = computed(() => {
   }
 })
 
+const tokenUsage = computed(() => {
+  if (!task.value || !task.value.token_usage) return null
+  try {
+    return JSON.parse(task.value.token_usage)
+  } catch {
+    return null
+  }
+})
+
+const tokenStages = computed(() => {
+  const usage = tokenUsage.value
+  if (!usage) return []
+  const labels = {
+    plan: "生成计划",
+    next_queries: "补充查询",
+    report: "生成报告",
+  }
+  return Object.entries(usage)
+    .filter(([key]) => labels[key])
+    .map(([key, value]) => ({
+      key,
+      label: labels[key],
+      prompt: value.prompt_tokens || 0,
+      completion: value.completion_tokens || 0,
+      total: value.total_tokens || 0,
+    }))
+})
+
+const tokenTotals = computed(() => {
+  const stages = tokenStages.value
+  if (!stages.length) return { prompt: 0, completion: 0, total: 0 }
+  return {
+    prompt: stages.reduce((sum, s) => sum + s.prompt, 0),
+    completion: stages.reduce((sum, s) => sum + s.completion, 0),
+    total: stages.reduce((sum, s) => sum + s.total, 0),
+  }
+})
+
+function stageWidth(stage) {
+  const total = tokenTotals.value.total
+  if (!total) return 0
+  return Math.max(3, Math.round((stage.total / total) * 100))
+}
+
 async function loadTask() {
   try {
     const tasks = await listResearchTasks()
@@ -83,6 +127,47 @@ onMounted(loadTask)
         <li v-for="(q, i) in webSources" :key="i">{{ q }}</li>
       </ul>
     </div>
+
+    <div v-if="tokenStages.length" class="token-usage">
+      <h3>Token 消耗统计</h3>
+      <div class="token-summary">
+        <div class="token-total">
+          <span class="token-num">{{ tokenTotals.total }}</span>
+          <span class="token-label">总 Token</span>
+        </div>
+        <div class="token-total">
+          <span class="token-num">{{ tokenTotals.prompt }}</span>
+          <span class="token-label">输入 Token</span>
+        </div>
+        <div class="token-total">
+          <span class="token-num">{{ tokenTotals.completion }}</span>
+          <span class="token-label">输出 Token</span>
+        </div>
+      </div>
+      <div class="token-bar">
+        <div
+          v-for="stage in tokenStages"
+          :key="stage.key"
+          class="token-segment"
+          :class="`seg-${stage.key}`"
+          :style="{ width: stageWidth(stage) + '%' }"
+          :title="`${stage.label}：${stage.total} token`"
+        ></div>
+      </div>
+      <div class="token-stages">
+        <div
+          v-for="stage in tokenStages"
+          :key="stage.key"
+          class="token-stage"
+        >
+          <span class="stage-dot" :class="`seg-${stage.key}`"></span>
+          <span class="stage-label">{{ stage.label }}</span>
+          <span class="stage-value">
+            输入 {{ stage.prompt }} / 输出 {{ stage.completion }}
+          </span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -124,6 +209,81 @@ onMounted(loadTask)
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 16px;
+}
+.token-usage {
+  margin-top: 24px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+}
+.token-usage h3 {
+  margin-top: 0;
+}
+.token-summary {
+  display: flex;
+  gap: 32px;
+  margin-bottom: 12px;
+}
+.token-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.token-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1976d2;
+}
+.token-label {
+  font-size: 12px;
+  color: #777;
+}
+.token-bar {
+  display: flex;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f0f0f0;
+}
+.token-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+.seg-plan {
+  background: #1976d2;
+}
+.seg-next_queries {
+  background: #7c4dff;
+}
+.seg-report {
+  background: #e65100;
+}
+.token-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.token-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.stage-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.stage-label {
+  font-weight: 600;
+  color: #333;
+  width: 64px;
+}
+.stage-value {
+  color: #777;
 }
 .hint {
   color: #999;
