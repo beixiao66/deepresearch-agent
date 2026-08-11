@@ -17,15 +17,11 @@ const currentMessage = ref("正在加载研究任务...")
 const progress = ref(0)
 
 const progressSteps = [
-  { key: "plan", label: "生成计划", threshold: 25 },
-  { key: "review", label: "人工确认", threshold: 35 },
-  { key: "retrieve", label: "检索资料", threshold: 55 },
-  { key: "report", label: "生成报告", threshold: 85 },
+  { key: "plan", label: "生成计划" },
+  { key: "review", label: "人工确认" },
+  { key: "retrieve", label: "检索资料" },
+  { key: "report", label: "生成报告" },
 ]
-
-function isStepActive(step) {
-  return progress.value >= step.threshold
-}
 
 function updateProgress(event) {
   if (event.message) {
@@ -132,9 +128,6 @@ async function onApprove(approved) {
   awaitingApproval.value = false
   progress.value = approved ? 45 : 0
   currentMessage.value = approved ? "正在开始研究..." : "正在处理拒绝操作..."
-  if (approved && task.value) {
-    task.value.status = "running"
-  }
   try {
     await streamApprove(taskId, approved, pushEvent)
     if (approved && task.value) {
@@ -180,7 +173,7 @@ onMounted(loadTask)
           :key="step.key"
           :class="[
             'progress-step',
-            { active: isStepActive(step) },
+            { active: progress >= (index + 1) * 25 },
           ]"
         >
           <span class="step-dot">{{ index + 1 }}</span>
