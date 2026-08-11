@@ -1,10 +1,9 @@
 <script setup>
 import { onMounted, ref } from "vue"
-import { useRoute, useRouter } from "vue-router"
+import { useRoute } from "vue-router"
 import { streamApprove, listResearchTasks } from "../api"
 
 const route = useRoute()
-const router = useRouter()
 
 const taskId = route.params.taskId
 const task = ref(null)
@@ -15,12 +14,14 @@ const running = ref(false)
 const error = ref("")
 const currentMessage = ref("正在加载研究任务...")
 const progress = ref(0)
+const currentStage = ref(0)
+const completed = ref(false)
 
 const progressSteps = [
-  { key: "plan", label: "生成计划" },
-  { key: "review", label: "人工确认" },
-  { key: "retrieve", label: "检索资料" },
-  { key: "report", label: "生成报告" },
+  { key: "plan", label: "生成计划", stage: 1 },
+  { key: "review", label: "人工确认", stage: 2 },
+  { key: "retrieve", label: "检索资料", stage: 3 },
+  { key: "report", label: "生成报告", stage: 4 },
 ]
 
 function updateProgress(event) {
@@ -36,6 +37,16 @@ function updateProgress(event) {
       report: 85,
     }
     if (event.stage && stageProgress[event.stage]) {
+      const stageIndex = {
+        plan: 1,
+        review: 2,
+        retrieve: 3,
+        report: 4,
+      }
+      currentStage.value = Math.max(
+        currentStage.value,
+        stageIndex[event.stage]
+      )
       progress.value = Math.max(
         progress.value,
         stageProgress[event.stage]
@@ -60,9 +71,12 @@ function updateProgress(event) {
     progress.value = Math.max(progress.value, 10)
   }
   if (event.type === "awaiting_approval") {
+    currentStage.value = 2
     progress.value = 35
   }
   if (event.type === "completed") {
+    currentStage.value = 4
+    completed.value = true
     progress.value = 100
     currentMessage.value = "研究已完成"
   }
@@ -75,6 +89,11 @@ function pushEvent(event) {
   events.value.push(event)
   updateProgress(event)
   if (event.type === "status") {
+    if (event.stage === "report") {
+      currentStage.value = 4
+    } else if (event.stage === "retrieve") {
+      currentStage.value = 3
+    }
     task.value.status = "running"
   }
   if (event.type === "awaiting_approval") {
@@ -83,7 +102,6 @@ function pushEvent(event) {
   }
   if (event.type === "completed") {
     task.value.status = "completed"
-    router.push(`/research/report/${taskId}`)
   }
   if (event.type === "error") {
     task.value.status = "failed"
@@ -103,6 +121,7 @@ async function loadTask() {
 
     if (task.value.status === "awaiting_approval") {
       awaitingApproval.value = true
+      currentStage.value = 2
       progress.value = 35
       currentMessage.value = "研究计划已生成，等待确认"
       try {
@@ -111,6 +130,8 @@ async function loadTask() {
         plan.value = null
       }
     } else if (task.value.status === "completed") {
+      currentStage.value = 4
+      completed.value = true
       progress.value = 100
       currentMessage.value = "研究已完成"
     } else if (task.value.status === "failed") {
@@ -126,8 +147,12 @@ async function onApprove(approved) {
   running.value = true
   error.value = ""
   awaitingApproval.value = false
-  progress.value = approved ? 45 : 0
-  currentMessage.value = approved ? "正在开始研究..." : "正在处理拒绝操作..."
+  currentStage.value = approved ? 3 : 0
+  progress.value = approved ? 55 : 0
+  currentMessage.value = approved ? "正在检索资料..." : "正在处理拒绝操作..."
+  if (approved && task.value) {
+    task.value.status = "running"
+  }
   try {
     await streamApprove(taskId, approved, pushEvent)
     if (approved && task.value) {
@@ -173,7 +198,10 @@ onMounted(loadTask)
           :key="step.key"
           :class="[
             'progress-step',
-            { active: progress >= (index + 1) * 25 },
+            {
+              active: currentStage === step.stage,
+              done: currentStage > step.stage || completed,
+            },
           ]"
         >
           <span class="step-dot">{{ index + 1 }}</span>
@@ -240,6 +268,13 @@ onMounted(loadTask)
       </div>
     </div>
 
+    <p v-if="completed" class="report-link">
+      研究已完成，
+      <router-link :to="`/research/report/${taskId}`">
+        查看研究报告
+      </router-link>
+    </p>
+
     <p v-if="error" class="error">{{ error }}</p>
   </div>
 </template>
@@ -299,7 +334,8 @@ onMounted(loadTask)
   color: #9e9e9e;
   font-size: 12px;
 }
-.progress-step.active {
+.progress-step.active,
+.progress-step.done {
   color: #1976d2;
   font-weight: 600;
 }
@@ -312,7 +348,8 @@ onMounted(loadTask)
   border-radius: 50%;
   background: #e5e7eb;
 }
-.progress-step.active .step-dot {
+.progress-step.active .step-dot,
+.progress-step.done .step-dot {
   background: #1976d2;
   color: #fff;
 }
@@ -369,6 +406,14 @@ onMounted(loadTask)
 .event-dot {
   margin-right: 8px;
   color: #4caf50;
+}
+.report-link {
+  margin-top: 16px;
+  color: #2e7d32;
+}
+.report-link a {
+  color: #1976d2;
+  font-weight: 600;
 }
 .error {
   color: #c62828;
