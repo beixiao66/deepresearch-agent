@@ -10,6 +10,7 @@ const statusLabel = {
   running: "执行中",
   awaiting_approval: "待确认",
   completed: "已完成",
+  cancelled: "已取消",
   failed: "失败",
 }
 
@@ -94,6 +95,10 @@ onMounted(async () => {
 .badge.completed {
   background: #e8f5e9;
   color: #2e7d32;
+}
+.badge.cancelled {
+  background: #f5f5f5;
+  color: #616161;
 }
 .badge.failed {
   background: #ffebee;

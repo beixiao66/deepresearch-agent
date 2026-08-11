@@ -96,6 +96,14 @@ async def stream_approve_research(
         async for event in _drain_events(events_queue):
             yield event
 
+        if not approved:
+            yield format_sse({
+                "type": "cancelled",
+                "task_id": task_id,
+                "message": "用户已取消此次研究任务",
+            })
+            return
+
         yield format_sse({
             "type": "completed",
             "task_id": task_id,

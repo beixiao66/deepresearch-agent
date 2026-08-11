@@ -47,6 +47,50 @@ def test_stream_start_research_emits_chinese_error() -> None:
     asyncio.run(run_test())
 
 
+def test_stream_approve_research_emits_cancelled_event() -> None:
+    async def run_test() -> None:
+        from app.schemas.research import ResearchPlan
+        from app.schemas.research_report import ResearchReport
+
+        plan = ResearchPlan(
+            topic="RAG",
+            objective="研究 RAG",
+            sub_questions=["什么是 RAG？"],
+            search_queries=["RAG"],
+        )
+        report = ResearchReport(
+            topic="RAG",
+            plan=plan,
+            sources=[],
+            answer="",
+            task_id=42,
+        )
+
+        async def fake_approve(task_id, approved, task_repository):
+            return report
+
+        import app.services.sse as sse_module
+        original = sse_module.approve_research
+        sse_module.approve_research = fake_approve
+        try:
+            events = []
+            async for chunk in sse_module.stream_approve_research(
+                42,
+                False,
+                Mock(),
+            ):
+                events.append(chunk)
+
+            assert len(events) == 1
+            assert '"type": "cancelled"' in events[0]
+            assert "用户已取消此次研究任务" in events[0]
+            assert '"type": "completed"' not in events[0]
+        finally:
+            sse_module.approve_research = original
+
+    asyncio.run(run_test())
+
+
 def test_stream_start_research_emits_events() -> None:
     async def run_test() -> None:
         from app.schemas.research import ResearchPlan

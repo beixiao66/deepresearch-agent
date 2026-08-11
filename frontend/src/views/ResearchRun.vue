@@ -16,6 +16,16 @@ const currentMessage = ref("正在加载研究任务...")
 const progress = ref(0)
 const currentStage = ref(0)
 const completed = ref(false)
+const cancelled = ref(false)
+
+const statusLabel = {
+  pending: "待处理",
+  running: "执行中",
+  awaiting_approval: "待确认",
+  completed: "已完成",
+  cancelled: "已取消",
+  failed: "失败",
+}
 
 const progressSteps = [
   { key: "plan", label: "生成计划", stage: 1 },
@@ -74,6 +84,13 @@ function updateProgress(event) {
     currentStage.value = 2
     progress.value = 35
   }
+  if (event.type === "cancelled") {
+    currentStage.value = 0
+    progress.value = 0
+    completed.value = false
+    cancelled.value = true
+    currentMessage.value = event.message || "用户已取消此次研究任务"
+  }
   if (event.type === "completed") {
     currentStage.value = 4
     completed.value = true
@@ -99,6 +116,11 @@ function pushEvent(event) {
   if (event.type === "awaiting_approval") {
     task.value.status = "awaiting_approval"
     awaitingApproval.value = true
+  }
+  if (event.type === "cancelled") {
+    task.value.status = "cancelled"
+    awaitingApproval.value = false
+    error.value = ""
   }
   if (event.type === "completed") {
     task.value.status = "completed"
@@ -129,6 +151,12 @@ async function loadTask() {
       } catch {
         plan.value = null
       }
+    } else if (task.value.status === "cancelled") {
+      awaitingApproval.value = false
+      currentStage.value = 0
+      progress.value = 0
+      cancelled.value = true
+      currentMessage.value = task.value.error_message || "用户已取消此次研究任务"
     } else if (task.value.status === "completed") {
       currentStage.value = 4
       completed.value = true
@@ -149,7 +177,7 @@ async function onApprove(approved) {
   awaitingApproval.value = false
   currentStage.value = approved ? 3 : 0
   progress.value = approved ? 55 : 0
-  currentMessage.value = approved ? "正在检索资料..." : "正在处理拒绝操作..."
+  currentMessage.value = approved ? "正在检索资料..." : "正在取消研究任务..."
   if (approved && task.value) {
     task.value.status = "running"
   }
@@ -176,7 +204,7 @@ onMounted(loadTask)
     <div v-if="task" class="status-line">
       任务 #{{ task.id }}：{{ task.topic }}
       <span :class="['badge', task.status]">
-        {{ task.status === 'awaiting_approval' ? '待确认' : task.status }}
+        {{ statusLabel[task.status] || task.status }}
       </span>
     </div>
 
@@ -259,6 +287,9 @@ onMounted(loadTask)
         <span v-else-if="event.type === 'task_created'">
           任务已创建（#{{ event.task_id }}）
         </span>
+        <span v-else-if="event.type === 'cancelled'">
+          {{ event.message }}
+        </span>
         <span v-else-if="event.type === 'completed'">
           研究完成！
         </span>
@@ -267,6 +298,10 @@ onMounted(loadTask)
         </span>
       </div>
     </div>
+
+    <p v-if="cancelled" class="cancelled-message">
+      用户已取消此次研究任务
+    </p>
 
     <p v-if="completed" class="report-link">
       研究已完成，
@@ -406,6 +441,10 @@ onMounted(loadTask)
 .event-dot {
   margin-right: 8px;
   color: #4caf50;
+}
+.cancelled-message {
+  margin-top: 16px;
+  color: #616161;
 }
 .report-link {
   margin-top: 16px;
