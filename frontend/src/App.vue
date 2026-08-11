@@ -1,5 +1,6 @@
 <script setup>
 import { RouterLink, RouterView } from "vue-router"
+import ErrorDialog from "./components/ErrorDialog.vue"
 </script>
 
 <template>
@@ -12,6 +13,7 @@ import { RouterLink, RouterView } from "vue-router"
     <main class="main">
       <RouterView />
     </main>
+    <ErrorDialog />
   </div>
 </template>
 

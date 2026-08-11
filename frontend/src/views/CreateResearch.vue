@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { listKnowledgeBases, streamResearch } from "../api"
+import { showErrorDialog } from "../errorDialog"
 
 const router = useRouter()
 
@@ -15,9 +16,13 @@ const taskId = ref(null)
 const plan = ref(null)
 
 onMounted(async () => {
-  bases.value = await listKnowledgeBases()
-  if (bases.value.length) {
-    knowledgeBaseId.value = bases.value[0].id
+  try {
+    bases.value = await listKnowledgeBases()
+    if (bases.value.length) {
+      knowledgeBaseId.value = bases.value[0].id
+    }
+  } catch (e) {
+    error.value = e.message
   }
 })
 
@@ -25,10 +30,12 @@ async function onCreate() {
   error.value = ""
   if (!topic.value.trim()) {
     error.value = "请输入研究主题"
+    showErrorDialog(error.value)
     return
   }
   if (knowledgeBaseId.value === null) {
     error.value = "请选择知识库"
+    showErrorDialog(error.value)
     return
   }
 
