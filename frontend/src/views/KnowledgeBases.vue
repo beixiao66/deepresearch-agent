@@ -148,7 +148,7 @@ onMounted(loadBases)
         <div v-if="selectedId !== null" class="upload-row">
           <input
             type="file"
-            accept=".pdf,.md,.txt"
+            accept=".pdf,.md,.txt,.docx,.html,.htm,.xlsx,.pptx,.csv"
             @change="onUpload"
           />
           <span v-if="uploading">上传中...</span>
@@ -193,7 +193,7 @@ onMounted(loadBases)
           </tbody>
         </table>
         <p v-else-if="selectedId !== null" class="hint">
-          暂无文档，上传 PDF/Markdown/TXT 文件
+          暂无文档，上传 PDF/Markdown/TXT/Word/Excel/PPT/CSV/HTML 文件
         </p>
         <p v-else class="hint">请选择左侧知识库</p>
 

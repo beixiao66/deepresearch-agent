@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- **知识库管理**：上传 PDF / Markdown / TXT 文档，自动完成解析 → 切分 → 向量化 → 入库，实时查看文档处理状态
+- **知识库管理**：上传 PDF / Markdown / TXT / Word / Excel / PPT / CSV / HTML 文档，自动完成解析 → 切分 → 向量化 → 入库，实时查看文档处理状态
 - **混合检索**：向量检索（Qdrant）+ 关键词检索（SQLite FTS5 BM25）双路召回，RRF 排名融合
 - **Rerank 精排**：接入百炼 `qwen3-rerank` 交叉编码器，对召回候选重新打分
 - **研究编排（LangGraph）**：规划 → 人工确认 → 检索 → 证据评估 → 报告，检索不足时自动补充查询词（最多 3 轮）
@@ -133,7 +133,7 @@ npm run dev
 
 ### 使用流程
 
-1. **知识库页**：创建知识库 → 上传文档（PDF/MD/TXT），等待状态变为"已完成"
+1. **知识库页**：创建知识库 → 上传文档（PDF/MD/TXT/DOCX/HTML/XLSX/PPTX/CSV），等待状态变为"已完成"
 2. **创建研究页**：输入研究主题、选择知识库、可选开启联网
 3. **执行页**：查看生成的计划（子问题 + 关键词）→ 确认或拒绝 → 实时看 SSE 进度
 4. **报告页**：阅读 Markdown 报告（含引用编号）
@@ -168,15 +168,17 @@ npm run dev
 ## 测试
 
 ```bash
-# 后端（114 个测试，全部 mock，不消耗真实 API）
+# 后端（125 个测试，全部 mock，不消耗真实 API）
 pytest -q
 ```
 
-覆盖：文档解析/切分/Embedding 分批、FTS5 索引与检索、RRF 融合、Rerank、混合检索、DocumentService 状态流转、研究任务持久化、HITL 两阶段流程、SSE 事件格式、API 校验与错误处理。
+覆盖：文档解析（PDF/MD/TXT/DOCX/HTML/XLSX/PPTX/CSV）/切分/Embedding 分批、FTS5 索引与检索、RRF 融合、Rerank、混合检索、DocumentService 状态流转、研究任务持久化、HITL 两阶段流程、SSE 事件格式、API 校验与错误处理。
 
 ## 已知局限
 
 - **FTS5 中文分词**：SQLite FTS5 默认 tokenizer 对中文处理一般，含下划线/连字符的精确词（如 `step-by-step`）已做转义，但复杂中文分词需自定义 tokenizer
+- **扫描件 OCR**：扫描版 PDF / 图片类型文档需 OCR 后才能检索，当前版本不支持
+- **XLSX/PPTX 提取深度**：XLSX 仅提取单元格文本（公式结果按 `data_only` 读取），PPTX 仅提取文本框内容，图表、嵌入对象和图片内文字暂不提取
 - **评估语料区分度**：当前语料主题独立，评估指标无法区分混合检索/Rerank 的增量价值，需同主题多文档语料
 - **任务状态持久化**：`research_tasks` 表结构变更需手动 ALTER TABLE（SQLite 无自动迁移）
 - **在线部署**：尚未部署到线上环境（本地运行验证通过）
