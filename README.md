@@ -205,7 +205,3 @@ deepresearch-agent/
 ├── compose.yaml             # Qdrant Docker 编排
 └── requirements.txt
 ```
-
-## 相关链接
-
-- 学习路线与冲刺计划：https://github.com/didilili/ai-agents-from-zero
