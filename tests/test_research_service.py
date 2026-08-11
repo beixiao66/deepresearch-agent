@@ -11,6 +11,7 @@ from app.services.research import (
     start_research,
 )
 from app.services.research_graph import (
+    _report,
     _should_continue,
     build_research_graph,
 )
@@ -214,6 +215,28 @@ def test_approve_research_rejected_marks_failed(
     task_repository.update_status.assert_awaited()
 
 
+def test_report_without_sources_does_not_call_llm(
+        monkeypatch,
+) -> None:
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.research_graph.get_llm",
+        lambda: mock_llm,
+    )
+
+    result = asyncio.run(
+        _report({
+            "question": "什么是 RAG？",
+            "sources": [],
+        })
+    )
+
+    assert "暂无足够资料" in result["answer"]
+    assert "未使用模型自身知识" in result["answer"]
+    mock_llm.ainvoke.assert_not_awaited()
+
+
 def test_should_continue_enough_sources_reports() -> None:
     assert _should_continue(
         {
@@ -241,8 +264,22 @@ def test_should_continue_low_quality_sources_continue() -> None:
 
 def test_should_continue_insufficient_sources_next_queries() -> None:
     assert _should_continue(
-        {"sources": [{"text": "a"}], "retrieval_round": 1}
+        {
+            "sources": [{"text": "a"}],
+            "retrieval_round": 1,
+            "use_web_search": True,
+        }
     ) == "next_queries"
+
+
+def test_should_continue_no_sources_without_web_reports() -> None:
+    assert _should_continue(
+        {
+            "sources": [],
+            "retrieval_round": 1,
+            "use_web_search": False,
+        }
+    ) == "report"
 
 
 def test_should_continue_max_rounds_force_report() -> None:
