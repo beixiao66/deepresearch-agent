@@ -58,6 +58,7 @@ async def stream_start_research(
 
         yield format_sse({
             "type": "awaiting_approval",
+            "stage": "review",
             "message": "研究计划已生成，等待确认",
         })
     except Exception as exc:
