@@ -119,6 +119,34 @@ class QdrantStore:
             ),
         )
 
+    async def delete_knowledge_base_points(
+            self,
+            knowledge_base_id: int,
+    ) -> None:
+        collections = await self.client.get_collections()
+
+        collection_names = {
+            collection.name
+            for collection in collections.collections
+        }
+
+        if self.collection_name not in collection_names:
+            return
+
+        await self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="knowledge_base_id",
+                        match=MatchValue(
+                            value=knowledge_base_id
+                        ),
+                    )
+                ]
+            ),
+        )
+
     async def search(
             self,
             query_vector: list[float],

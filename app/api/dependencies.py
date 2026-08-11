@@ -46,22 +46,6 @@ KnowledgeBaseRepositoryDependency = Annotated[
 ]
 
 
-def get_knowledge_base_service(
-        repository: KnowledgeBaseRepositoryDependency,
-        session: DatabaseSession,
-) -> KnowledgeBaseService:
-    return KnowledgeBaseService(
-        repository=repository,
-        session=session,
-    )
-
-
-KnowledgeBaseServiceDependency = Annotated[
-    KnowledgeBaseService,
-    Depends(get_knowledge_base_service),
-]
-
-
 def get_document_repository(
         session: DatabaseSession,
 ) -> DocumentRepository:
@@ -111,6 +95,26 @@ def get_qdrant_store() -> QdrantStore:
 QdrantStoreDependency = Annotated[
     QdrantStore,
     Depends(get_qdrant_store),
+]
+
+
+def get_knowledge_base_service(
+        repository: KnowledgeBaseRepositoryDependency,
+        session: DatabaseSession,
+        file_storage: FileStorageServiceDependency,
+        qdrant_store: QdrantStoreDependency,
+) -> KnowledgeBaseService:
+    return KnowledgeBaseService(
+        repository=repository,
+        session=session,
+        file_storage=file_storage,
+        qdrant_store=qdrant_store,
+    )
+
+
+KnowledgeBaseServiceDependency = Annotated[
+    KnowledgeBaseService,
+    Depends(get_knowledge_base_service),
 ]
 
 

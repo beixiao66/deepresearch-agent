@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.document import Document
 from app.models.knowledge_base import KnowledgeBase
 
 
@@ -40,3 +41,21 @@ class KnowledgeBaseRepository:
             KnowledgeBase,
             knowledge_base_id,
         )
+
+    async def delete(
+            self,
+            knowledge_base: KnowledgeBase,
+    ) -> None:
+        await self.session.delete(knowledge_base)
+
+    async def list_documents(
+            self,
+            knowledge_base_id: int,
+    ) -> list[Document]:
+        statement = select(Document).where(
+            Document.knowledge_base_id
+            == knowledge_base_id
+        )
+        result = await self.session.execute(statement)
+
+        return list(result.scalars().all())

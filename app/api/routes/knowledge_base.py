@@ -57,3 +57,14 @@ async def get_knowledge_base(
       return KnowledgeBaseResponse.model_validate(
           knowledge_base
       )
+
+
+@router.delete(
+      "/{knowledge_base_id}",
+      status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_knowledge_base(
+      service: KnowledgeBaseServiceDependency,
+      knowledge_base_id: int = Path(gt=0),
+) -> None:
+      await service.delete(knowledge_base_id)
