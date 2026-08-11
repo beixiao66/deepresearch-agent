@@ -74,11 +74,19 @@ function updateProgress(event) {
 function pushEvent(event) {
   events.value.push(event)
   updateProgress(event)
+  if (event.type === "status") {
+    task.value.status = "running"
+  }
   if (event.type === "awaiting_approval") {
+    task.value.status = "awaiting_approval"
     awaitingApproval.value = true
   }
   if (event.type === "completed") {
+    task.value.status = "completed"
     router.push(`/research/report/${taskId}`)
+  }
+  if (event.type === "error") {
+    task.value.status = "failed"
   }
 }
 
@@ -122,6 +130,9 @@ async function onApprove(approved) {
   currentMessage.value = approved ? "正在开始研究..." : "正在处理拒绝操作..."
   try {
     await streamApprove(taskId, approved, pushEvent)
+    if (approved && task.value) {
+      task.value.status = "completed"
+    }
   } catch (e) {
     error.value = e.message
     currentMessage.value = e.message
