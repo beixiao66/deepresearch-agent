@@ -13,32 +13,67 @@ const awaitingApproval = ref(false)
 const plan = ref(null)
 const running = ref(false)
 const error = ref("")
+const currentMessage = ref("正在加载研究任务...")
+const progress = ref(0)
 
-async function loadTask() {
-  try {
-    const tasks = await listResearchTasks()
-    task.value = tasks.find((t) => String(t.id) === taskId) || null
+const progressSteps = [
+  { key: "plan", label: "生成计划" },
+  { key: "review", label: "人工确认" },
+  { key: "retrieve", label: "检索资料" },
+  { key: "report", label: "生成报告" },
+]
 
-    if (!task.value) {
-      error.value = "任务不存在"
+function updateProgress(event) {
+  if (event.message) {
+    currentMessage.value = event.message
+  }
+
+  if (event.type === "status") {
+    const stageProgress = {
+      plan: 25,
+      review: 35,
+      retrieve: 55,
+      report: 85,
+    }
+    if (event.stage && stageProgress[event.stage]) {
+      progress.value = Math.max(
+        progress.value,
+        stageProgress[event.stage]
+      )
       return
     }
 
-    if (task.value.status === "awaiting_approval") {
-      awaitingApproval.value = true
-      try {
-        plan.value = JSON.parse(task.value.plan)
-      } catch {
-        plan.value = null
-      }
+    if (event.message.includes("生成研究计划")) {
+      progress.value = 25
+    } else if (event.message.includes("研究计划已生成")) {
+      progress.value = 35
+    } else if (event.message.includes("检索知识库")) {
+      progress.value = 55
+    } else if (event.message.includes("联网搜索")) {
+      progress.value = 65
+    } else if (event.message.includes("生成研究报告")) {
+      progress.value = 85
     }
-  } catch (e) {
-    error.value = e.message
+  }
+
+  if (event.type === "task_created") {
+    progress.value = Math.max(progress.value, 10)
+  }
+  if (event.type === "awaiting_approval") {
+    progress.value = 35
+  }
+  if (event.type === "completed") {
+    progress.value = 100
+    currentMessage.value = "研究已完成"
+  }
+  if (event.type === "error") {
+    currentMessage.value = event.message || "研究执行失败"
   }
 }
 
 function pushEvent(event) {
   events.value.push(event)
+  updateProgress(event)
   if (event.type === "awaiting_approval") {
     awaitingApproval.value = true
   }
@@ -47,14 +82,49 @@ function pushEvent(event) {
   }
 }
 
+async function loadTask() {
+  try {
+    const tasks = await listResearchTasks()
+    task.value = tasks.find((t) => String(t.id) === taskId) || null
+
+    if (!task.value) {
+      error.value = "任务不存在"
+      currentMessage.value = "任务不存在"
+      return
+    }
+
+    if (task.value.status === "awaiting_approval") {
+      awaitingApproval.value = true
+      progress.value = 35
+      currentMessage.value = "研究计划已生成，等待确认"
+      try {
+        plan.value = JSON.parse(task.value.plan)
+      } catch {
+        plan.value = null
+      }
+    } else if (task.value.status === "completed") {
+      progress.value = 100
+      currentMessage.value = "研究已完成"
+    } else if (task.value.status === "failed") {
+      currentMessage.value = task.value.error_message || "研究执行失败"
+    }
+  } catch (e) {
+    error.value = e.message
+    currentMessage.value = e.message
+  }
+}
+
 async function onApprove(approved) {
   running.value = true
   error.value = ""
   awaitingApproval.value = false
+  progress.value = approved ? 45 : 0
+  currentMessage.value = approved ? "正在开始研究..." : "正在处理拒绝操作..."
   try {
     await streamApprove(taskId, approved, pushEvent)
   } catch (e) {
     error.value = e.message
+    currentMessage.value = e.message
   } finally {
     running.value = false
   }
@@ -70,11 +140,37 @@ onMounted(loadTask)
     <div v-if="task" class="status-line">
       任务 #{{ task.id }}：{{ task.topic }}
       <span :class="['badge', task.status]">
-        {{ task.status }}
+        {{ task.status === 'awaiting_approval' ? '待确认' : task.status }}
       </span>
     </div>
 
-    <!-- 计划确认框 -->
+    <div class="progress-panel">
+      <div class="progress-header">
+        <strong>{{ currentMessage }}</strong>
+        <span>{{ progress }}%</span>
+      </div>
+      <div class="progress-track">
+        <div
+          class="progress-bar"
+          :class="{ failed: currentMessage.includes('失败') }"
+          :style="{ width: `${progress}%` }"
+        ></div>
+      </div>
+      <div class="progress-steps">
+        <div
+          v-for="(step, index) in progressSteps"
+          :key="step.key"
+          :class="[
+            'progress-step',
+            { active: progress >= (index + 1) * 25 },
+          ]"
+        >
+          <span class="step-dot">{{ index + 1 }}</span>
+          <span>{{ step.label }}</span>
+        </div>
+      </div>
+    </div>
+
     <div v-if="awaitingApproval && plan" class="plan-box">
       <h3>研究计划确认</h3>
       <p class="objective">{{ plan.objective }}</p>
@@ -111,7 +207,6 @@ onMounted(loadTask)
       </div>
     </div>
 
-    <!-- 进度事件流 -->
     <div class="events">
       <div
         v-for="(event, i) in events"
@@ -150,6 +245,66 @@ onMounted(loadTask)
   background: #eceff1;
   color: #546e7a;
 }
+.progress-panel {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+}
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  color: #333;
+}
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+.progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: #1976d2;
+  transition: width 0.4s ease;
+}
+.progress-bar.failed {
+  background: #d32f2f;
+}
+.progress-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+.progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #9e9e9e;
+  font-size: 12px;
+}
+.progress-step.active {
+  color: #1976d2;
+  font-weight: 600;
+}
+.step-dot {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e5e7eb;
+}
+.progress-step.active .step-dot {
+  background: #1976d2;
+  color: #fff;
+}
 .plan-box {
   background: #fff;
   border: 1px solid #ddd;
@@ -183,6 +338,11 @@ onMounted(loadTask)
   border: none;
   border-radius: 6px;
   cursor: pointer;
+}
+.primary:disabled,
+.danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .events {
   background: #1a1a2e;
