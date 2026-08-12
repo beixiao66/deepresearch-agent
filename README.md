@@ -7,11 +7,11 @@
 - **知识库管理**：上传 PDF / Markdown / TXT / Word / Excel / PPT / CSV / HTML 文档，自动完成解析 → 切分 → 向量化 → 入库，实时查看文档处理状态
 - **混合检索**：向量检索（Qdrant）+ 关键词检索（SQLite FTS5 BM25）双路召回，RRF 排名融合
 - **Rerank 精排**：接入百炼 `qwen3-rerank` 交叉编码器，对召回候选重新打分
-- **研究编排（LangGraph）**：规划 → 人工确认 → 检索 → 证据评估 → 报告，检索不足时自动补充查询词（最多 3 轮）
+- **研究编排（LangGraph 多 Agent）**：规划 → 人工确认 → Send API 并行分发子问题给多个研究员 Agent → 聚合生成报告
 - **Human-in-the-loop**：研究计划生成后暂停，由用户确认或拒绝后才继续执行
-- **联网补充**：知识库证据不足时（按开关）调用 Tavily 搜索，结果带 URL 引用
+- **联网补充**：子 Agent 证据不足时（按开关）调用 Tavily 搜索，结果带 URL 引用
 - **SSE 流式进度**：研究执行过程逐步推送进度事件，前端实时展示
-- **前端（Vue 3）**：知识库管理、创建研究、研究执行（计划确认 + 进度流）、研究报告（Markdown 渲染）四个页面
+- **前端（Vue 3）**：知识库管理、创建研究（支持直接上传文件研究）、研究执行（计划确认 + 进度流）、研究报告（Markdown 渲染）四个页面
 
 ## 架构
 
@@ -26,7 +26,8 @@ flowchart TD
 
     subgraph Backend["后端 FastAPI (port 8000)"]
         API[API 路由]
-        GRAPH[LangGraph 主图<br/>plan → review → retrieve → report]
+        GRAPH[LangGraph 主图<br/>plan → review → dispatch → report]
+        AGENTS[并行子研究员 Agent<br/>Send API 分发]
         RET[混合检索<br/>向量 + FTS5 + RRF + Rerank]
         WEB[Tavily 联网]
         SSE[SSE 事件流]
@@ -38,8 +39,9 @@ flowchart TD
     end
 
     API --> GRAPH
-    GRAPH --> RET
-    GRAPH --> WEB
+    GRAPH --> AGENTS
+    AGENTS --> RET
+    AGENTS --> WEB
     GRAPH --> SSE
     SSE --> RUN
     RET --> QD
@@ -50,17 +52,18 @@ flowchart TD
     REP --> API
 ```
 
-**研究主流程**：
+**研究主流程（多 Agent）**：
 
 ```text
 用户输入主题
   → plan 节点：LLM 生成研究计划（子问题 + 检索关键词）
   → review 节点：interrupt 暂停，等待用户确认计划
-  → retrieve 节点：混合检索（向量 + BM25 + RRF + Rerank）
-      └─ 证据不足且开启联网 → Tavily 补充
-  → 条件边：证据评估（条数 ≥3 且平均分 ≥0.3）→ report
-      └─ 不足 → next_queries 生成补充查询词 → 重新检索（最多 3 轮）
-  → report 节点：基于证据生成带引用编号的中文报告
+  → dispatch 节点：Send API 把每个子问题并行分发给独立研究员 Agent
+      ├─ researcher(子问题1)：混合检索（向量 + BM25 + RRF + Rerank）→ 生成子回答
+      ├─ researcher(子问题2)：同上
+      └─ researcher(子问题N)：同上
+        └─ 证据不足且开启联网 → 子 Agent 内 Tavily 补充
+  → report 节点：聚合所有子回答与证据，生成带引用编号的中文报告
 ```
 
 ## 技术栈
@@ -68,7 +71,7 @@ flowchart TD
 | 层 | 技术 |
 |----|------|
 | 后端 | Python 3.10+、FastAPI、SQLAlchemy 2.x（async）、Pydantic v2 |
-| Agent | LangChain、LangGraph（StateGraph + interrupt + checkpoint） |
+| Agent | LangChain、LangGraph（StateGraph + interrupt + checkpoint + Send API 多 Agent） |
 | 检索 | Qdrant（向量）、SQLite FTS5（BM25）、RRF 融合、qwen3-rerank |
 | 模型 | 阿里云百炼（qwen-plus / text-embedding-v4 / qwen3-rerank）、Tavily |
 | 前端 | Vue 3 + Vite + vue-router + marked |
@@ -197,15 +200,15 @@ deepresearch-agent/
 │   ├── repositories/        # 数据访问层
 │   ├── schemas/             # Pydantic 模型
 │   └── services/            # 业务层
-│       ├── research_graph.py    # LangGraph 主图
+│       ├── research_graph.py    # LangGraph 多 Agent 主图
 │       ├── document_retriever.py # 混合检索
 │       ├── reranker.py          # qwen3-rerank 重排
 │       ├── sparse_*.py          # FTS5 关键词检索
 │       ├── sse.py               # SSE 事件流
 │       └── web_search.py        # Tavily 联网
 ├── frontend/                # Vue 3 前端（4 个页面）
-├── scripts/evaluate_rag.py  # RAG 离线评估脚本
-├── tests/                   # 114 个后端测试
+├── scripts/evaluate_rag_v3.py # RAG 离线评估脚本
+├── tests/                   # 132 个后端测试
 ├── compose.yaml             # Qdrant Docker 编排
 └── requirements.txt
 ```
