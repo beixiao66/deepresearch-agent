@@ -162,6 +162,14 @@ async def approve_research(
             config=_build_thread_id(task.id),
         )
 
+        # 多 Agent 模式下，证据片段收集在 sub_answers 里
+        sub_answers = result.get("sub_answers", [])
+        all_sources: list[dict] = []
+        for sub_answer in sub_answers:
+            all_sources.extend(
+                sub_answer.get("sources", [])
+            )
+
         sources = [
             {
                 "document_id": source.get("document_id"),
@@ -175,7 +183,7 @@ async def approve_research(
                 ),
                 "url": source.get("url"),
             }
-            for source in result["sources"]
+            for source in all_sources
         ]
 
         report = ResearchReport(

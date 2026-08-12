@@ -173,3 +173,35 @@ async def generate_report(
         _record_usage(usage_counters, response)
 
     return _strip_promotional_tail(response.content)
+
+
+async def generate_sub_answer(
+        sub_question: str,
+        sources_text: str,
+        usage_counters: dict | None = None,
+) -> str:
+    """子 Agent：针对单个子问题生成带证据的回答。"""
+    messages = [
+        SystemMessage(
+            content=(
+                "你是研究助手的一个子研究员。请只针对给定的子问题，"
+                "基于检索到的资料给出有据可依的回答。"
+                "回答应包含：核心结论、关键证据（引用编号）。"
+                "如果资料不足以回答，请明确说明'暂无足够资料'，"
+                "不要编造内容，不要输出任何'如需帮助'类推荐。"
+            )
+        ),
+        HumanMessage(
+            content=(
+                f"子问题：{sub_question}\n\n"
+                f"{sources_text}"
+            )
+        ),
+    ]
+
+    response = await get_llm().ainvoke(messages)
+
+    if usage_counters is not None:
+        _record_usage(usage_counters, response)
+
+    return _strip_promotional_tail(response.content)

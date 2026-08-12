@@ -11,10 +11,24 @@ from app.services.research import (
     start_research,
 )
 from app.services.research_graph import (
+    _fanout,
     _report,
-    _should_continue,
+    _researcher,
     build_research_graph,
 )
+from langgraph.types import Send
+
+
+def build_plan() -> ResearchPlan:
+    return ResearchPlan(
+        topic="Agentic RAG",
+        objective="研究 Agentic RAG",
+        sub_questions=[
+            "Agentic RAG 是什么？",
+            "Agentic RAG 有哪些应用？",
+        ],
+        search_queries=["Agentic RAG"],
+    )
 
 
 def test_build_research_graph_has_expected_structure() -> None:
@@ -25,8 +39,8 @@ def test_build_research_graph_has_expected_structure() -> None:
 
     assert "plan" in nodes
     assert "review" in nodes
-    assert "retrieve" in nodes
-    assert "next_queries" in nodes
+    assert "dispatch" in nodes
+    assert "researcher" in nodes
     assert "report" in nodes
     assert "__start__" in nodes
     assert "__end__" in nodes
@@ -38,28 +52,42 @@ def test_build_research_graph_has_expected_structure() -> None:
     ]
     assert ("__start__", "plan") in plain_edges
     assert ("plan", "review") in plain_edges
-    assert ("review", "retrieve") in plain_edges
-    assert ("next_queries", "retrieve") in plain_edges
+    assert ("review", "dispatch") in plain_edges
+    assert ("researcher", "report") in plain_edges
     assert ("report", "__end__") in plain_edges
 
+    # dispatch 通过条件边（Send 并行分发）到 researcher
     conditional_edges = [
         (edge.source, edge.target)
         for edge in edges
         if edge.conditional
     ]
-    assert ("retrieve", "report") in conditional_edges
-    assert ("retrieve", "next_queries") in conditional_edges
+    assert ("dispatch", "researcher") in conditional_edges
+
+
+def test_fanout_returns_send_for_each_sub_question() -> None:
+    plan = build_plan()
+    sends = _fanout(
+        {
+            "question": "Agentic RAG",
+            "knowledge_base_id": 1,
+            "use_web_search": False,
+            "plan": plan,
+        }
+    )
+
+    assert len(sends) == 2
+    assert all(isinstance(s, Send) for s in sends)
+    assert sends[0].node == "researcher"
+    assert sends[0].arg["question"] == "Agentic RAG 是什么？"
+    assert sends[1].arg["question"] == "Agentic RAG 有哪些应用？"
+    assert sends[0].arg["knowledge_base_id"] == 1
 
 
 def test_start_research_pauses_at_plan_review(
         monkeypatch,
 ) -> None:
-    plan = ResearchPlan(
-        topic="Agentic RAG",
-        objective="研究 Agentic RAG",
-        sub_questions=["Agentic RAG 是什么？"],
-        search_queries=["Agentic RAG"],
-    )
+    plan = build_plan()
 
     fake_graph = Mock()
     fake_graph.ainvoke = AsyncMock(
@@ -108,24 +136,25 @@ def test_start_research_pauses_at_plan_review(
 def test_approve_research_completes_report(
         monkeypatch,
 ) -> None:
-    plan = ResearchPlan(
-        topic="Agentic RAG",
-        objective="研究 Agentic RAG",
-        sub_questions=["Agentic RAG 是什么？"],
-        search_queries=["Agentic RAG"],
-    )
+    plan = build_plan()
 
     fake_graph = Mock()
     fake_graph.ainvoke = AsyncMock(
         return_value={
             "plan": plan,
-            "sources": [
+            "sub_answers": [
                 {
-                    "document_id": 1,
-                    "chunk_index": 2,
-                    "text": "Agentic RAG 是……",
-                    "score": 0.9,
-                    "query": "Agentic RAG",
+                    "question": "Agentic RAG 是什么？",
+                    "answer": "Agentic RAG 是……",
+                    "sources": [
+                        {
+                            "document_id": 1,
+                            "chunk_index": 2,
+                            "text": "Agentic RAG 是……",
+                            "score": 0.9,
+                            "query": "Agentic RAG",
+                        }
+                    ],
                 }
             ],
             "answer": "Agentic RAG 是……",
@@ -164,6 +193,7 @@ def test_approve_research_completes_report(
     assert isinstance(report, ResearchReport)
     assert report.plan == plan
     assert len(report.sources) == 1
+    assert report.sources[0].document_id == 1
     assert report.answer == "Agentic RAG 是……"
     fake_graph.ainvoke.assert_awaited_once()
 
@@ -171,12 +201,7 @@ def test_approve_research_completes_report(
 def test_approve_research_cancelled_marks_cancelled(
         monkeypatch,
 ) -> None:
-    plan = ResearchPlan(
-        topic="Agentic RAG",
-        objective="研究 Agentic RAG",
-        sub_questions=["Agentic RAG 是什么？"],
-        search_queries=["Agentic RAG"],
-    )
+    plan = build_plan()
 
     fake_graph = Mock()
     fake_graph.ainvoke = AsyncMock(
@@ -218,7 +243,7 @@ def test_approve_research_cancelled_marks_cancelled(
     assert status_call.kwargs["error_message"] == "用户已取消此次研究任务"
 
 
-def test_report_without_sources_does_not_call_llm(
+def test_report_without_sub_answers_does_not_call_llm(
         monkeypatch,
 ) -> None:
     mock_llm = Mock()
@@ -231,61 +256,37 @@ def test_report_without_sources_does_not_call_llm(
     result = asyncio.run(
         _report({
             "question": "什么是 RAG？",
-            "sources": [],
+            "sub_answers": [],
         })
     )
 
     assert "暂无足够资料" in result["answer"]
-    assert "未使用模型自身知识" in result["answer"]
     mock_llm.ainvoke.assert_not_awaited()
 
 
-def test_should_continue_enough_sources_reports() -> None:
-    assert _should_continue(
-        {
-            "sources": [
-                {"text": "a", "score": 0.8},
-                {"text": "b", "score": 0.7},
-                {"text": "c", "score": 0.6},
-            ]
-        }
-    ) == "report"
+def test_researcher_without_evidence_returns_placeholder(
+        monkeypatch,
+) -> None:
+    """子 Agent 无证据时返回占位回答，不调用 LLM。"""
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.research_graph.get_llm",
+        lambda: mock_llm,
+    )
 
-
-def test_should_continue_low_quality_sources_continue() -> None:
-    assert _should_continue(
-        {
-            "sources": [
-                {"text": "a", "score": 0.1},
-                {"text": "b", "score": 0.1},
-                {"text": "c", "score": 0.1},
-            ],
-            "retrieval_round": 1,
-        }
-    ) == "next_queries"
-
-
-def test_should_continue_insufficient_sources_next_queries() -> None:
-    assert _should_continue(
-        {
-            "sources": [{"text": "a"}],
-            "retrieval_round": 1,
-            "use_web_search": True,
-        }
-    ) == "next_queries"
-
-
-def test_should_continue_no_sources_without_web_reports() -> None:
-    assert _should_continue(
-        {
-            "sources": [],
-            "retrieval_round": 1,
+    plan = build_plan()
+    result = asyncio.run(
+        _researcher({
+            "question": "Agentic RAG 是什么？",
+            "knowledge_base_id": 999,
             "use_web_search": False,
-        }
-    ) == "report"
+            "plan": plan,
+        })
+    )
 
-
-def test_should_continue_max_rounds_force_report() -> None:
-    assert _should_continue(
-        {"sources": [], "retrieval_round": 3}
-    ) == "report"
+    assert len(result["sub_answers"]) == 1
+    sub_answer = result["sub_answers"][0]
+    assert "暂无足够资料" in sub_answer["answer"]
+    # 无证据时不调用 LLM（子 Agent 内部没有生成回答）
+    mock_llm.ainvoke.assert_not_awaited()

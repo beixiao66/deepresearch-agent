@@ -7,7 +7,7 @@ from functools import lru_cache
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, interrupt
+from langgraph.types import Command, Send, interrupt
 
 from app.schemas.state import ResearchState
 from app.services.web_search import search_web
@@ -18,8 +18,8 @@ from app.services.document_embedder import (
 )
 from app.services.document_retriever import DocumentRetriever
 from app.services.llm import (
-    generate_follow_up_queries,
     generate_report,
+    generate_sub_answer,
     get_llm,
 )
 from app.services.planner import generate_research_plan
@@ -91,7 +91,6 @@ async def _plan_research(state: ResearchState) -> dict:
         "knowledge_base_id": state["knowledge_base_id"],
         "use_web_search": state.get("use_web_search", False),
         "token_usage": {
-            **state.get("token_usage", {}),
             "plan": plan_counters,
         },
     }
@@ -121,22 +120,62 @@ def _review_plan(state: ResearchState) -> dict:
     return {"plan": state["plan"]}
 
 
-async def _retrieve(state: ResearchState) -> dict:
-    """检索节点：根据规划产出的关键词并行查询向量库，收集资料片段。"""
-    logger.info("retrieve node: round %d", state.get("retrieval_round", 0) + 1)
+def _dispatch(state: ResearchState) -> dict:
+    """分发节点占位：实际并行分发逻辑在条件边函数 _fanout 中。
+
+    LangGraph 中 Send 列表必须由条件边函数返回，节点函数只返回
+    状态更新（这里无需更新，返回空 dict）。
+    """
+    logger.info(
+        "dispatch node: %d sub-questions",
+        len(state["plan"].sub_questions),
+    )
     _emit({
         "type": "status",
         "stage": "retrieve",
-        "message": "正在检索知识库...",
+        "message": (
+            f"正在并行研究 {len(state['plan'].sub_questions)} "
+            "个子问题..."
+        ),
     })
+    return {}
+
+
+def _fanout(state: ResearchState) -> list[Send]:
+    """条件边函数：把每个子问题并行分发给独立的子研究员 Agent。
+
+    返回 Send 列表，LangGraph 会并行执行所有 researcher 子 Agent，
+    全部完成后才进入 report 聚合节点。
+    """
+    sub_questions = state["plan"].sub_questions
+    logger.info(
+        "fanout: %d sub-questions to researchers",
+        len(sub_questions),
+    )
+
+    return [
+        Send(
+            "researcher",
+            {
+                "question": sub_question,
+                "knowledge_base_id": state["knowledge_base_id"],
+                "use_web_search": state.get("use_web_search", False),
+                "plan": state["plan"],
+            },
+        )
+        for sub_question in sub_questions
+    ]
+
+
+async def _researcher(state: ResearchState) -> dict:
+    """子研究员 Agent：检索单个子问题的证据并生成子回答。"""
+    sub_question = state["question"]
+    logger.info("researcher agent: %s", sub_question)
+
     sources: list[dict] = []
-
     queries = state["plan"].search_queries
-    if state.get("next_queries"):
-        queries = state["next_queries"]
 
-    # 混合检索：向量 + FTS5 + Rerank。
-    # SparseRetriever 需要 session，session 生命周期 = 本节点执行周期。
+    # 混合检索：向量 + FTS5 + Rerank（子问题自身的检索路）
     async with AsyncSessionLocal() as session:
         await SparseIndexer(session).ensure_table()
 
@@ -151,13 +190,17 @@ async def _retrieve(state: ResearchState) -> dict:
             reranker=get_reranker(),
         )
 
+        # 用子问题本身作为查询词检索（子问题语义更聚焦）
+        search_questions = [sub_question] + [
+            query
+            for query in queries
+            if query not in (sub_question,)
+        ]
+
         async def retrieve_one(query: str) -> list[dict]:
             results = await retriever.retrieve_hybrid(
                 question=query,
-                knowledge_base_id=state.get(
-                    "knowledge_base_id",
-                    1,
-                ),
+                knowledge_base_id=state["knowledge_base_id"],
                 limit=3,
                 rerank=True,
             )
@@ -172,50 +215,27 @@ async def _retrieve(state: ResearchState) -> dict:
                 for result in results
             ]
 
-        # 并行检索所有查询词：互不依赖的 I/O 同时发出，总耗时≈单个查询耗时
         results_per_query = await asyncio.gather(
-            *[retrieve_one(query) for query in queries]
+            *[retrieve_one(query) for query in search_questions]
         )
         for query_results in results_per_query:
             sources.extend(query_results)
 
-    existing = state.get("sources", [])
-    combined = existing + sources
-
-    # 知识库证据不足且开启联网：补一轮 Tavily 搜索
-    # 判定标准与证据评估一致：条数不足 或 平均分过低
-    # 只在第一轮触发（round 0），避免每轮循环都重复联网
-    is_first_round = state.get("retrieval_round", 0) == 0
-    if is_first_round and state.get("use_web_search", False):
-        evidence_insufficient = False
-
-        if len(combined) < 3:
-            evidence_insufficient = True
-        elif combined:
-            avg_score = sum(
-                source.get("score", 0.0)
-                for source in combined
-            ) / len(combined)
-            if avg_score < 0.3:
-                evidence_insufficient = True
-
-        if evidence_insufficient:
-            logger.info(
-                "knowledge base evidence insufficient, searching web"
+    # 证据不足且开启联网：补一轮 Tavily 搜索
+    if state.get("use_web_search", False) and len(sources) < 3:
+        _emit({
+            "type": "status",
+            "stage": "retrieve",
+            "message": f"子问题证据不足，正在联网搜索: {sub_question[:20]}...",
+        })
+        for query in search_questions[:2]:
+            web_results = await anyio.to_thread.run_sync(
+                search_web,
+                query,
+                3,
             )
-            _emit({
-                "type": "status",
-                "stage": "retrieve",
-                "message": "知识库资料不足，正在联网搜索...",
-            })
-
-            async def search_one(query: str) -> list[dict]:
-                web_results = await anyio.to_thread.run_sync(
-                    search_web,
-                    query,
-                    3,
-                )
-                return [
+            for web_result in web_results:
+                sources.append(
                     {
                         "document_id": None,
                         "chunk_index": None,
@@ -225,137 +245,91 @@ async def _retrieve(state: ResearchState) -> dict:
                         "source_type": "web",
                         "url": web_result.url,
                     }
-                    for web_result in web_results
-                ]
+                )
 
-            web_results_per_query = await asyncio.gather(
-                *[search_one(query) for query in queries]
-            )
-            for web_query_results in web_results_per_query:
-                combined.extend(web_query_results)
-
-    logger.info("retrieved %d new sources, total %d", len(sources), len(combined))
-    return {
-        "sources": combined,
-        "retrieval_round": state.get("retrieval_round", 0) + 1,
-    }
-
-
-async def _next_queries(state: ResearchState) -> dict:
-    """补充查询节点：检索不足时，让 LLM 生成新一轮更精准的查询词。"""
-    logger.info("next_queries node: generating follow-up queries")
-    query_counters = {
+    # 生成子回答
+    sub_counters = {
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,
     }
-    new_queries = await generate_follow_up_queries(
-        state["question"],
-        len(state.get("sources", [])),
-        query_counters,
-    )
 
-    logger.info("follow-up queries: %s", new_queries)
+    if not sources:
+        answer = (
+            "## 暂无足够资料\n\n"
+            f"针对子问题「{sub_question}」，当前知识库中没有检索到"
+            "相关内容，因此无法给出有据可依的回答。"
+        )
+    else:
+        sources_text = "\n".join(
+            f"[{index}] {source['text']}"
+            for index, source in enumerate(
+                sources,
+                start=1,
+            )
+        )
+        answer = await generate_sub_answer(
+            sub_question,
+            f"检索资料：\n{sources_text}",
+            sub_counters,
+        )
+
     return {
-        "next_queries": new_queries,
+        "sub_answers": [
+            {
+                "question": sub_question,
+                "answer": answer,
+                "sources": sources,
+            }
+        ],
         "token_usage": {
-            **state.get("token_usage", {}),
-            "next_queries": query_counters,
+            "researcher": sub_counters,
         },
     }
 
 
-
-def _should_continue(state: ResearchState) -> str:
-    """条件边：评估证据充分性，充分则生成报告，否则继续检索（带轮次上限）。
-
-    评估维度：
-    - 条数：检索到的资料片段数
-    - 平均分：片段的平均相关度（过低视为证据不足，即使条数够）
-    """
-    MIN_SOURCES = 3
-    MAX_ROUNDS = 3
-    MIN_AVG_SCORE = 0.3
-
-    sources = state.get("sources", [])
-    sources_count = len(sources)
-    round_count = state.get("retrieval_round", 0)
-
-    if sources_count >= MIN_SOURCES:
-        avg_score = sum(
-            source.get("score", 0.0)
-            for source in sources
-        ) / sources_count
-
-        if avg_score >= MIN_AVG_SCORE:
-            logger.info(
-                "evidence sufficient (%d sources, avg %.2f), report",
-                sources_count,
-                avg_score,
-            )
-            return "report"
-
-        logger.info(
-            "evidence weak (avg %.2f < %.2f), continue",
-            avg_score,
-            MIN_AVG_SCORE,
-        )
-    else:
-        logger.info(
-            "not enough sources (%d < %d), continue",
-            sources_count,
-            MIN_SOURCES,
-        )
-
-    if round_count >= MAX_ROUNDS:
-        logger.info("max rounds reached (%d), report", round_count)
-        return "report"
-
-    if not sources and not state.get("use_web_search", False):
-        logger.info("no local evidence and web search disabled, report")
-        return "report"
-
-    return "next_queries"
-
-    if round_count >= MAX_ROUNDS:
-        logger.info("max rounds reached (%d), report", round_count)
-        return "report"
-
-    logger.info("not enough sources (%d < %d), continue", sources_count, MIN_SOURCES)
-    return "next_queries"
-
-
 async def _report(state: ResearchState) -> dict:
-    """报告节点：结合检索到的资料，生成最终研究报告。"""
+    """聚合节点：收集所有子 Agent 的回答，生成最终研究报告。"""
     logger.info("report node")
     _emit({
         "type": "status",
         "stage": "report",
-        "message": "正在生成研究报告...",
+        "message": "正在汇总子问题并生成研究报告...",
     })
 
-    sources = state.get("sources", [])
-    if not sources:
-        logger.info("no evidence available, returning insufficient-data report")
+    sub_answers = state.get("sub_answers", [])
+    if not sub_answers:
         return {
             "answer": (
                 "## 暂无足够资料\n\n"
-                "当前知识库中没有检索到与该问题相关的内容，"
-                "因此无法基于可靠证据生成研究结论。\n\n"
-                "请先向知识库上传相关文档，或在创建研究任务时开启"
-                "“知识库不足时允许联网搜索”后重试。\n\n"
+                "当前没有生成任何子问题的研究结果，"
+                "因此无法给出完整报告。\n\n"
                 "> 本次未使用模型自身知识补充答案，以避免生成未经资料支持的内容。"
             )
         }
 
+    # 汇总所有子回答 + 证据
+    sub_answers_text = "\n\n".join(
+        f"## 子问题 {index}：{item['question']}\n\n{item['answer']}"
+        for index, item in enumerate(sub_answers, start=1)
+    )
+
+    # 从各子 Agent 的回答中收集证据片段
+    all_sources: list[dict] = []
+    for item in sub_answers:
+        all_sources.extend(item.get("sources", []))
+
     sources_text = "\n".join(
         f"[{index}] {source['text']}"
         for index, source in enumerate(
-            sources,
+            all_sources,
             start=1,
         )
     )
-    context = f"检索资料：\n{sources_text}"
+    context = (
+        f"子问题研究结果：\n{sub_answers_text}\n\n"
+        f"原始检索资料：\n{sources_text}"
+    )
 
     report_counters = {
         "prompt_tokens": 0,
@@ -370,34 +344,35 @@ async def _report(state: ResearchState) -> dict:
     return {
         "answer": answer,
         "token_usage": {
-            **state.get("token_usage", {}),
             "report": report_counters,
         },
     }
 
 
 def build_research_graph():
-    """构建 LangGraph 主流程：规划 -> 审核(人工确认) -> 检索 -> (条件循环) -> 报告。"""
+    """构建多 Agent 主流程：
+
+    规划 -> 审核(人工确认) -> 分发(并行子研究员) -> 聚合报告。
+    """
     graph = StateGraph(ResearchState)
 
     graph.add_node("plan", _plan_research)
     graph.add_node("review", _review_plan)
-    graph.add_node("retrieve", _retrieve)
-    graph.add_node("next_queries", _next_queries)
+    graph.add_node("dispatch", _dispatch)
+    graph.add_node("researcher", _researcher)
     graph.add_node("report", _report)
 
     graph.add_edge(START, "plan")
     graph.add_edge("plan", "review")
-    graph.add_edge("review", "retrieve")
+    graph.add_edge("review", "dispatch")
+    # 条件边函数 _fanout 返回 Send 列表：并行启动所有 researcher
+    # 子 Agent，全部完成后才进入 report
     graph.add_conditional_edges(
-        "retrieve",
-        _should_continue,
-        {
-            "report": "report",
-            "next_queries": "next_queries",
-        },
+        "dispatch",
+        _fanout,
+        ["researcher"],
     )
-    graph.add_edge("next_queries", "retrieve")
+    graph.add_edge("researcher", "report")
     graph.add_edge("report", END)
 
     # interrupt 需要 checkpoint 保存执行现场
