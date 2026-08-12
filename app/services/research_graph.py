@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import anyio
@@ -121,7 +122,7 @@ def _review_plan(state: ResearchState) -> dict:
 
 
 async def _retrieve(state: ResearchState) -> dict:
-    """检索节点：根据规划产出的关键词查询向量库，收集资料片段。"""
+    """检索节点：根据规划产出的关键词并行查询向量库，收集资料片段。"""
     logger.info("retrieve node: round %d", state.get("retrieval_round", 0) + 1)
     _emit({
         "type": "status",
@@ -150,7 +151,7 @@ async def _retrieve(state: ResearchState) -> dict:
             reranker=get_reranker(),
         )
 
-        for query in queries:
+        async def retrieve_one(query: str) -> list[dict]:
             results = await retriever.retrieve_hybrid(
                 question=query,
                 knowledge_base_id=state.get(
@@ -160,16 +161,23 @@ async def _retrieve(state: ResearchState) -> dict:
                 limit=3,
                 rerank=True,
             )
-            for result in results:
-                sources.append(
-                    {
-                        "document_id": result.document_id,
-                        "chunk_index": result.chunk_index,
-                        "text": result.text,
-                        "score": result.score,
-                        "query": query,
-                    }
-                )
+            return [
+                {
+                    "document_id": result.document_id,
+                    "chunk_index": result.chunk_index,
+                    "text": result.text,
+                    "score": result.score,
+                    "query": query,
+                }
+                for result in results
+            ]
+
+        # 并行检索所有查询词：互不依赖的 I/O 同时发出，总耗时≈单个查询耗时
+        results_per_query = await asyncio.gather(
+            *[retrieve_one(query) for query in queries]
+        )
+        for query_results in results_per_query:
+            sources.extend(query_results)
 
     existing = state.get("sources", [])
     combined = existing + sources
@@ -200,24 +208,31 @@ async def _retrieve(state: ResearchState) -> dict:
                 "stage": "retrieve",
                 "message": "知识库资料不足，正在联网搜索...",
             })
-            for query in queries:
+
+            async def search_one(query: str) -> list[dict]:
                 web_results = await anyio.to_thread.run_sync(
                     search_web,
                     query,
                     3,
                 )
-                for web_result in web_results:
-                    combined.append(
-                        {
-                            "document_id": None,
-                            "chunk_index": None,
-                            "text": web_result.content,
-                            "score": web_result.score,
-                            "query": query,
-                            "source_type": "web",
-                            "url": web_result.url,
-                        }
-                    )
+                return [
+                    {
+                        "document_id": None,
+                        "chunk_index": None,
+                        "text": web_result.content,
+                        "score": web_result.score,
+                        "query": query,
+                        "source_type": "web",
+                        "url": web_result.url,
+                    }
+                    for web_result in web_results
+                ]
+
+            web_results_per_query = await asyncio.gather(
+                *[search_one(query) for query in queries]
+            )
+            for web_query_results in web_results_per_query:
+                combined.extend(web_query_results)
 
     logger.info("retrieved %d new sources, total %d", len(sources), len(combined))
     return {
