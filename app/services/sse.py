@@ -3,6 +3,8 @@ import asyncio
 import json
 import logging
 
+from sqlalchemy import text
+
 from app.core.exceptions import get_public_error
 from app.repositories.research_task import ResearchTaskRepository
 from app.schemas.research_report import (
@@ -46,6 +48,11 @@ async def _cleanup_temp_knowledge_base(
 
     临时知识库只在任务执行期间存在，任务完成/取消/失败后自动清理，
     不会留在知识库列表中。
+
+    注意：research_tasks.knowledge_base_id 外键是 ON DELETE CASCADE，
+    直接删知识库会把研究任务记录也级联删掉（任务报告就无法查看了）。
+    因此删除临时知识库前临时关闭外键约束，只删知识库及其文档/向量，
+    保留研究任务记录。
     """
     try:
         task = await task_repository.get_by_id(task_id)
@@ -56,15 +63,26 @@ async def _cleanup_temp_knowledge_base(
             task.knowledge_base_id
         )
         if (
-            knowledge_base is not None
-            and knowledge_base.name.startswith(temp_kb_prefix)
+            knowledge_base is None
+            or not knowledge_base.name.startswith(temp_kb_prefix)
         ):
+            return
+
+        # 临时关闭外键约束，避免级联删除 research_tasks 记录
+        await knowledge_base_service.session.execute(
+            text("PRAGMA foreign_keys=OFF")
+        )
+        try:
             await knowledge_base_service.delete(
                 task.knowledge_base_id
             )
             logger.info(
                 "temp knowledge base cleaned: kb_id=%d",
                 task.knowledge_base_id,
+            )
+        finally:
+            await knowledge_base_service.session.execute(
+                text("PRAGMA foreign_keys=ON")
             )
     except Exception as exc:
         logger.error(
