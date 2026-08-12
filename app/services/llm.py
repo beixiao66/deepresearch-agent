@@ -20,7 +20,7 @@ def get_llm() -> ChatOpenAI:
         base_url=settings.dashscope_base_url,
         model=settings.llm_model,
         temperature=0,
-        timeout=30,
+        timeout=120,
         max_retries=2,
     )
 
