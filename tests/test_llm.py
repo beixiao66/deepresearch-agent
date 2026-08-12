@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.schemas.research import ResearchPlan
 from app.services.llm import (
+    _strip_promotional_tail,
     generate_follow_up_queries,
     generate_report,
     generate_research_plan,
@@ -186,3 +187,29 @@ def test_generate_report_records_usage(
         "completion_tokens": 200,
         "total_tokens": 500,
     }
+
+
+def test_strip_promotional_tail_removes_next_step_section() -> None:
+    report = (
+        "## 结论\n\n简历整体结构完整，技术栈匹配目标岗位。\n\n"
+        "## 参考来源\n\n[1] 简历正文\n\n"
+        "如需，我可为您：\n\n"
+        "生成一份优化后的 Markdown 简历模板；\n"
+        "撰写 STAR 描述稿。\n"
+        "请随时告知您的进一步需求。"
+    )
+
+    cleaned = _strip_promotional_tail(report)
+
+    assert "如需" not in cleaned
+    assert "STAR" not in cleaned
+    assert "请随时" not in cleaned
+    assert cleaned.endswith("[1] 简历正文")
+
+
+def test_strip_promotional_tail_keeps_normal_report() -> None:
+    report = "## 结论\n\n这是正常报告内容。\n\n## 参考来源\n\n[1] 来源"
+
+    cleaned = _strip_promotional_tail(report)
+
+    assert cleaned == report

@@ -3,6 +3,7 @@
 各节点直接调用这些函数，返回内容与结果一致，同时把 usage 累加到
 传入的计数器 dict 中，避免每个节点重复写提取逻辑。
 """
+import re
 from functools import lru_cache
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -105,21 +106,57 @@ async def generate_follow_up_queries(
     ][:3]
 
 
+# 报告末尾推荐性段落起始词：命中即截断（模型有时会自行添加"如需帮助"类内容）
+_PROMOTIONAL_PATTERNS = [
+    r"如需[，,。]?我",
+    r"如果需要[，,。]?我",
+    r"如您需要",
+    r"若需",
+    r"若您需要",
+    r"请随时告知",
+    r"欢迎随时",
+    r"如果您有任何",
+    r"我可以为您",
+    r"我可以为你",
+    r"有需要[，,。]?请",
+]
+
+
+def _strip_promotional_tail(text: str) -> str:
+    """删除报告末尾的推荐性段落（模型自行添加的'如需帮助'类内容）。
+
+    找到第一个匹配位置后，从该位置截断；同时清理截断点残留的
+    空行和列表符号。
+    """
+    for pattern in _PROMOTIONAL_PATTERNS:
+        match = re.search(pattern, text)
+        if match:
+            text = text[: match.start()]
+            break
+
+    return text.rstrip().rstrip("。；;").rstrip()
+
+
 async def generate_report(
         question: str,
         sources_text: str,
         usage_counters: dict | None = None,
 ) -> str:
-    """生成研究报告，返回报告文本并累加 token 用量。"""
+    """生成研究报告，返回报告文本并累加 token 用量。
+
+    生成后过滤末尾的推荐性段落，避免报告出现无法承接的
+    "如需帮助请联系我"类内容。
+    """
     messages = [
         SystemMessage(
             content=(
                 "你是一名研究助手。请基于用户问题与检索到的资料，"
                 "生成结构清晰、有据可依的研究报告。"
                 "报告应包含：结论、关键证据（引用编号）、局限与参考来源。"
-                "不要在报告中添加任何'如需帮助请联系我'、"
-                "'我可以为你提供后续服务'之类的推荐或承诺内容，"
-                "也不要输出与研究报告内容无关的引导性建议。"
+                "报告在结论、参考来源之后立即结束，"
+                "不要输出任何'如需帮助请联系我'、'我可以为您提供'、"
+                "'请随时告知需求'之类的推荐、承诺或引导性内容，"
+                "不要把模型能力宣传或后续服务建议写进报告。"
             )
         ),
         HumanMessage(
@@ -135,4 +172,4 @@ async def generate_report(
     if usage_counters is not None:
         _record_usage(usage_counters, response)
 
-    return response.content
+    return _strip_promotional_tail(response.content)
