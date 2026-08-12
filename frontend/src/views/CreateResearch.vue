@@ -10,6 +10,7 @@ const bases = ref([])
 const topic = ref("")
 const knowledgeBaseId = ref(null)
 const useWebSearch = ref(false)
+const file = ref(null)
 const running = ref(false)
 const error = ref("")
 const taskId = ref(null)
@@ -26,6 +27,12 @@ onMounted(async () => {
   }
 })
 
+function onFileSelected(event) {
+  const selected = event.target.files[0]
+  file.value = selected || null
+  // 选了文件后，知识库变为可选（不强制）
+}
+
 async function onCreate() {
   error.value = ""
   if (!topic.value.trim()) {
@@ -33,8 +40,8 @@ async function onCreate() {
     showErrorDialog(error.value)
     return
   }
-  if (knowledgeBaseId.value === null) {
-    error.value = "请选择知识库"
+  if (!file.value && knowledgeBaseId.value === null) {
+    error.value = "请选择知识库或上传文件"
     showErrorDialog(error.value)
     return
   }
@@ -48,6 +55,7 @@ async function onCreate() {
         topic: topic.value,
         knowledge_base_id: knowledgeBaseId.value,
         use_web_search: useWebSearch.value,
+        file: file.value,
       },
       (event) => {
         if (event.type === "task_created") {
@@ -99,6 +107,16 @@ async function onCreate() {
         知识库不足时允许联网搜索
       </label>
 
+      <label>或上传文件直接研究</label>
+      <input
+        type="file"
+        accept=".pdf,.md,.txt,.docx,.html,.htm,.xlsx,.pptx,.csv"
+        @change="onFileSelected"
+      />
+      <p v-if="file" class="file-hint">
+        已选择：{{ file.name }}（将自动创建临时知识库，研究完成后自动删除）
+      </p>
+
       <button
         class="primary"
         :disabled="running"
@@ -135,6 +153,10 @@ select {
   align-items: center;
   gap: 8px;
   font-weight: 400;
+}
+.file-hint {
+  font-size: 12px;
+  color: #777;
 }
 .primary {
   padding: 12px;

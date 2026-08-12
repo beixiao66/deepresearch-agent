@@ -36,9 +36,50 @@ async def _drain_events(events_queue: asyncio.Queue):
         yield format_sse(events_queue.get_nowait())
 
 
+async def _cleanup_temp_knowledge_base(
+        task_id: int,
+        task_repository: ResearchTaskRepository,
+        knowledge_base_service,
+        temp_kb_prefix: str,
+) -> None:
+    """研究任务结束后，删除上传附件时创建的临时知识库。
+
+    临时知识库只在任务执行期间存在，任务完成/取消/失败后自动清理，
+    不会留在知识库列表中。
+    """
+    try:
+        task = await task_repository.get_by_id(task_id)
+        if task is None:
+            return
+
+        knowledge_base = await knowledge_base_service.get_by_id(
+            task.knowledge_base_id
+        )
+        if (
+            knowledge_base is not None
+            and knowledge_base.name.startswith(temp_kb_prefix)
+        ):
+            await knowledge_base_service.delete(
+                task.knowledge_base_id
+            )
+            logger.info(
+                "temp knowledge base cleaned: kb_id=%d",
+                task.knowledge_base_id,
+            )
+    except Exception as exc:
+        logger.error(
+            "temp knowledge base cleanup failed: task_id=%d, error=%s",
+            task_id,
+            exc,
+            exc_info=True,
+        )
+
+
 async def stream_start_research(
         request: ResearchRequest,
         task_repository: ResearchTaskRepository,
+        knowledge_base_service=None,
+        temp_kb_prefix: str | None = None,
 ):
     """SSE 流（阶段一）：创建任务 → 生成计划 → 暂停等确认。"""
     events_queue = await _collect_events()
@@ -82,6 +123,8 @@ async def stream_approve_research(
         task_id: int,
         approved: bool,
         task_repository: ResearchTaskRepository,
+        knowledge_base_service=None,
+        temp_kb_prefix: str | None = None,
 ):
     """SSE 流（阶段二）：批准后执行检索与报告。"""
     events_queue = await _collect_events()
@@ -125,3 +168,11 @@ async def stream_approve_research(
 
     finally:
         set_progress_hook(None)
+
+        if knowledge_base_service is not None and temp_kb_prefix:
+            await _cleanup_temp_knowledge_base(
+                task_id,
+                task_repository,
+                knowledge_base_service,
+                temp_kb_prefix,
+            )

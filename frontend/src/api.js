@@ -116,14 +116,38 @@ export async function listResearchTasks() {
   return response.json()
 }
 
-// 创建研究：SSE 流式返回进度事件
+// 创建研究：SSE 流式返回进度事件（支持可选上传文件）
 export async function streamResearch(params, onEvent) {
   let response
+
+  const hasFile = params.file instanceof File
+  let body
+  let headers = { "Content-Type": "application/json" }
+
+  if (hasFile) {
+    const formData = new FormData()
+    formData.append("topic", params.topic)
+    formData.append(
+      "knowledge_base_id",
+      params.knowledge_base_id === null ? "" : params.knowledge_base_id
+    )
+    formData.append("use_web_search", String(params.use_web_search))
+    formData.append("file", params.file)
+    body = formData
+    headers = {}
+  } else {
+    body = JSON.stringify({
+      topic: params.topic,
+      knowledge_base_id: params.knowledge_base_id,
+      use_web_search: params.use_web_search,
+    })
+  }
+
   try {
     response = await fetch(`${BASE_URL}/research`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
+      headers,
+      body,
     })
   } catch {
     const error = new Error("无法连接服务器，请检查服务是否已启动")
