@@ -48,6 +48,9 @@ async def generate_research_plan(
             content=(
                 "你是一名研究计划设计助手。"
                 "请将用户的研究主题拆分为可检索、可验证的子问题。"
+                "所有子问题和检索关键词都必须使用与研究主题相同的语言"
+                "（主题是中文就全部用中文，主题是英文就全部用英文），"
+                "不要混用语言，不要输出英文关键词。"
                 "不要回答研究问题本身，只生成研究计划。"
             )
         ),
@@ -139,24 +142,58 @@ def _strip_promotional_tail(text: str) -> str:
 
 # 引用编号：形如 [1] 或 [1][2][3]
 _CITATION_PATTERN = re.compile(r"\[(\d+)\]")
+# 区间引用：形如 [1]–[5] 或 [1]-[5]（模型常写"基于 [1]–[5]"）
+_CITATION_RANGE_PATTERN = re.compile(
+    r"\[(\d+)\]\s*[–—-]\s*\[(\d+)\]"
+)
+# 残缺区间：形如 [1]– 后面没有结束编号（如"基于 [1]–）"）
+_CITATION_TRAILING_RANGE_PATTERN = re.compile(
+    r"\[(\d+)\]\s*[–—-]\s*(?!\[)"
+)
+# 残留的空壳括号：形如（基于 ）或（基于），括号内只有"基于"
+_EMPTY_BASED_PAREN_PATTERN = re.compile(
+    r"[（(]\s*基于\s*[）)]"
+)
 
 
 def _strip_invalid_citations(text: str, max_citation: int) -> str:
     """删除超出来源数量的引用编号（模型可能编造不存在的 [n]）。
 
-    只删除编号本身（如 [5]），保留正文文字。例如：
-    "混合检索 [1][3][5]" → "混合检索 [1][3]"
+    处理三种情况：
+    1. 单个编号 [5] 超范围 → 删除编号本身，保留正文
+    2. 区间 [1]–[5] 结束编号超范围 → 截断为 [1]-[N]
+    3. 残缺区间 [1]– 没有结束编号 → 整体删除，避免"有头没尾"
     """
     if max_citation <= 0:
         return text
 
+    def fix_range(match: re.Match) -> str:
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if start > max_citation:
+            return ""
+        new_end = min(end, max_citation)
+        return f"[{start}]-[{new_end}]"
+
+    # 1. 完整区间：截断超范围结束编号
+    text = _CITATION_RANGE_PATTERN.sub(fix_range, text)
+
+    # 2. 残缺区间（[n]– 后无结束编号）：整体删除
+    text = _CITATION_TRAILING_RANGE_PATTERN.sub("", text)
+
+    # 3. 单个超范围编号
     def replace(match: re.Match) -> str:
         number = int(match.group(1))
         if number > max_citation:
             return ""
         return match.group(0)
 
-    return _CITATION_PATTERN.sub(replace, text)
+    text = _CITATION_PATTERN.sub(replace, text)
+
+    # 4. 清理残留空壳括号（基于 ）
+    text = _EMPTY_BASED_PAREN_PATTERN.sub("", text)
+
+    return text
 
 
 async def generate_report(

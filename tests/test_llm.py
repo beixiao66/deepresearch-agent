@@ -260,3 +260,30 @@ def test_generate_report_strips_invalid_citations(
     )
 
     assert answer == "结论 [1] 有效引用"
+
+
+def test_strip_invalid_citations_truncates_range() -> None:
+    from app.services.llm import _strip_invalid_citations
+
+    text = "核心结论：RAG 的核心技术支柱（基于 [1]–[5]）"
+    cleaned = _strip_invalid_citations(text, max_citation=4)
+
+    assert cleaned == "核心结论：RAG 的核心技术支柱（基于 [1]-[4]）"
+
+
+def test_strip_invalid_citations_removes_trailing_range() -> None:
+    from app.services.llm import _strip_invalid_citations
+
+    text = "核心结论：RAG 的核心技术支柱（基于 [1]–）"
+    cleaned = _strip_invalid_citations(text, max_citation=4)
+
+    assert cleaned == "核心结论：RAG 的核心技术支柱"
+
+
+def test_strip_invalid_citations_keeps_valid_range() -> None:
+    from app.services.llm import _strip_invalid_citations
+
+    text = "（基于 [1]-[3]）"
+    cleaned = _strip_invalid_citations(text, max_citation=4)
+
+    assert cleaned == text
