@@ -227,31 +227,6 @@ onMounted(loadTask)
   background: #eceff1;
   color: #546e7a;
 }
-.markdown {
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 24px;
-  line-height: 1.7;
-}
-.markdown h1 {
-  font-size: 26px;
-  margin-top: 1.2em;
-}
-.markdown h2 {
-  font-size: 21px;
-  margin-top: 1.2em;
-}
-.markdown h3 {
-  font-size: 17px;
-  margin-top: 1.2em;
-}
-.markdown pre {
-  background: #f5f5f5;
-  padding: 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-}
 .sources {
   margin-top: 24px;
   background: #fff;
@@ -404,5 +379,63 @@ onMounted(loadTask)
   border-radius: 8px;
   padding: 16px;
   color: #c62828;
+}
+</style>
+
+<!-- markdown 内容由 marked 渲染后通过 v-html 插入，scoped 样式不生效，
+     必须用非 scoped 样式块覆盖 -->
+<style>
+.markdown {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 24px;
+  line-height: 1.7;
+}
+.markdown h1 {
+  font-size: 26px;
+  margin-top: 1.2em;
+}
+.markdown h2 {
+  font-size: 21px;
+  margin-top: 1.2em;
+}
+.markdown h3 {
+  font-size: 17px;
+  margin-top: 1.2em;
+}
+.markdown pre {
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+}
+.markdown th {
+  background: #f8f8f8;
+  font-weight: 600;
+}
+.markdown blockquote {
+  border-left: 4px solid #e0e0e0;
+  margin: 12px 0;
+  padding: 4px 16px;
+  color: #666;
+}
+.markdown a {
+  color: #1976d2;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 24px;
 }
 </style>
