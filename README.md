@@ -13,6 +13,17 @@
 - **SSE 流式进度**：研究执行过程逐步推送进度事件，前端实时展示
 - **前端（Vue 3）**：知识库管理、创建研究（支持直接上传文件研究）、研究执行（计划确认 + 进度流）、研究报告（Markdown 渲染）四个页面
 
+## 截图
+
+<!-- TODO: 截图占位，待补充 -->
+
+| 页面 | 截图 |
+|------|------|
+| 知识库管理（上传文档、状态展示） | <!-- TODO: 截图 1 --> |
+| 创建研究（选择知识库 / 上传文件） | <!-- TODO: 截图 2 --> |
+| 研究执行（计划确认 + SSE 进度） | <!-- TODO: 截图 3 --> |
+| 研究报告（Markdown 渲染 + 参考来源 + Token 统计） | <!-- TODO: 截图 4 --> |
+
 ## 架构
 
 ```mermaid
@@ -174,7 +185,7 @@ npm run dev
 ## 测试
 
 ```bash
-# 后端（125 个测试，全部 mock，不消耗真实 API）
+# 后端（143 个测试，全部 mock，不消耗真实 API）
 pytest -q
 ```
 
@@ -208,7 +219,7 @@ deepresearch-agent/
 │       └── web_search.py        # Tavily 联网
 ├── frontend/                # Vue 3 前端（4 个页面）
 ├── scripts/evaluate_rag_v3.py # RAG 离线评估脚本
-├── tests/                   # 132 个后端测试
+├── tests/                   # 143 个后端测试
 ├── compose.yaml             # Qdrant Docker 编排
 └── requirements.txt
 ```
