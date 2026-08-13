@@ -78,3 +78,10 @@ class ResearchTaskRepository:
             token_usage: str | None,
     ) -> None:
         task.token_usage = token_usage
+
+    async def save_sources(
+            self,
+            task: ResearchTask,
+            sources: str | None,
+    ) -> None:
+        task.sources = sources

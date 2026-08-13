@@ -183,8 +183,13 @@ def test_approve_research_completes_report(
     )
     task_repository.update_status = AsyncMock()
     task_repository.save_report = AsyncMock()
+    task_repository.save_sources = AsyncMock()
     task_repository.session = Mock()
     task_repository.session.commit = AsyncMock()
+    # 引用溯源查询文档文件名
+    task_repository.session.execute = AsyncMock(
+        return_value=Mock(all=lambda: [(1, "rag.pdf")])
+    )
 
     report = asyncio.run(
         approve_research(1, True, task_repository)
@@ -273,6 +278,12 @@ def test_researcher_without_evidence_returns_placeholder(
     monkeypatch.setattr(
         "app.services.research_graph.get_llm",
         lambda: mock_llm,
+    )
+
+    # 检索 mock 为空结果，避免测试依赖真实 Qdrant
+    monkeypatch.setattr(
+        "app.services.document_retriever.DocumentRetriever.retrieve_hybrid",
+        AsyncMock(return_value=[]),
     )
 
     plan = build_plan()
