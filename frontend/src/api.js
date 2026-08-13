@@ -120,34 +120,22 @@ export async function listResearchTasks() {
 export async function streamResearch(params, onEvent) {
   let response
 
-  const hasFile = params.file instanceof File
-  let body
-  let headers = { "Content-Type": "application/json" }
-
-  if (hasFile) {
-    const formData = new FormData()
-    formData.append("topic", params.topic)
-    formData.append(
-      "knowledge_base_id",
-      params.knowledge_base_id === null ? "" : params.knowledge_base_id
-    )
-    formData.append("use_web_search", String(params.use_web_search))
+  // 后端 POST /research 只接受 multipart/form-data，统一用 FormData 提交
+  const formData = new FormData()
+  formData.append("topic", params.topic)
+  formData.append(
+    "knowledge_base_id",
+    params.knowledge_base_id === null ? "" : params.knowledge_base_id
+  )
+  formData.append("use_web_search", String(params.use_web_search))
+  if (params.file instanceof File) {
     formData.append("file", params.file)
-    body = formData
-    headers = {}
-  } else {
-    body = JSON.stringify({
-      topic: params.topic,
-      knowledge_base_id: params.knowledge_base_id,
-      use_web_search: params.use_web_search,
-    })
   }
 
   try {
     response = await fetch(`${BASE_URL}/research`, {
       method: "POST",
-      headers,
-      body,
+      body: formData,
     })
   } catch {
     const error = new Error("无法连接服务器，请检查服务是否已启动")
