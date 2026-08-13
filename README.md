@@ -24,42 +24,7 @@
 
 ## 架构
 
-```mermaid
-flowchart TD
-    subgraph Frontend["前端 Vue 3 (port 8080)"]
-        KB[知识库管理]
-        CR[创建研究]
-        RUN[研究执行<br/>SSE 进度]
-        REP[研究报告]
-    end
-
-    subgraph Backend["后端 FastAPI (port 8000)"]
-        API[API 路由]
-        GRAPH[LangGraph 主图<br/>plan → review → dispatch → report]
-        AGENTS[并行子研究员 Agent<br/>Send API 分发]
-        RET[混合检索<br/>向量 + FTS5 + RRF + Rerank]
-        WEB[Tavily 联网]
-        SSE[SSE 事件流]
-    end
-
-    subgraph Storage["存储"]
-        QD[(Qdrant<br/>向量库)]
-        SQL[(SQLite<br/>文档/任务 + FTS5)]
-    end
-
-    API --> GRAPH
-    GRAPH --> AGENTS
-    AGENTS --> RET
-    AGENTS --> WEB
-    GRAPH --> SSE
-    SSE --> RUN
-    RET --> QD
-    RET --> SQL
-    API --> SQL
-    KB --> API
-    CR --> API
-    REP --> API
-```
+![系统架构](docs/screenshots/架构图.png)
 
 **研究主流程（多 Agent）**：
 
