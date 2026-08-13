@@ -17,6 +17,7 @@ from app.schemas.research_report import (
     ResearchRequest,
 )
 from app.services.research_graph import build_research_graph
+from app.services.source_dedup import dedupe_sources
 
 logger = logging.getLogger(__name__)
 
@@ -206,13 +207,19 @@ async def approve_research(
             config=_build_thread_id(task.id),
         )
 
-        # 多 Agent 模式下，证据片段收集在 sub_answers 里
-        sub_answers = result.get("sub_answers", [])
-        all_sources: list[dict] = []
-        for sub_answer in sub_answers:
-            all_sources.extend(
-                sub_answer.get("sources", [])
-            )
+        # 优先使用报告节点精选后的证据（与正文引用编号一一对应）；
+        # 兼容旧图结果：回退到 sub_answers 全量收集
+        curated = result.get("curated_sources")
+        if curated is not None:
+            all_sources = curated
+        else:
+            sub_answers = result.get("sub_answers", [])
+            all_sources = []
+            for sub_answer in sub_answers:
+                all_sources.extend(
+                    sub_answer.get("sources", [])
+                )
+            all_sources = dedupe_sources(all_sources)
 
         sources = [
             {
