@@ -234,9 +234,16 @@ onMounted(loadTask)
   padding: 24px;
   line-height: 1.7;
 }
-.markdown h1,
-.markdown h2,
+.markdown h1 {
+  font-size: 26px;
+  margin-top: 1.2em;
+}
+.markdown h2 {
+  font-size: 21px;
+  margin-top: 1.2em;
+}
 .markdown h3 {
+  font-size: 17px;
   margin-top: 1.2em;
 }
 .markdown pre {
