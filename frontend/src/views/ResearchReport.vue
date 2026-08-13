@@ -69,6 +69,23 @@ function stageWidth(stage) {
   return Math.max(3, Math.round((stage.total / total) * 100))
 }
 
+const citationSources = computed(() => {
+  if (!task.value || !task.value.sources) return []
+  try {
+    return JSON.parse(task.value.sources)
+  } catch {
+    return []
+  }
+})
+
+// 报告正文引用了 [n]，来源列表按 1 起编号与之一一对应
+const numberedSources = computed(() =>
+  citationSources.value.map((source, index) => ({
+    number: index + 1,
+    source,
+  }))
+)
+
 async function loadTask() {
   try {
     const tasks = await listResearchTasks()
@@ -121,10 +138,35 @@ onMounted(loadTask)
       <p>{{ task.error_message }}</p>
     </div>
 
-    <div v-if="webSources.length" class="sources">
-      <h3>检索关键词</h3>
-      <ul>
-        <li v-for="(q, i) in webSources" :key="i">{{ q }}</li>
+    <div v-if="numberedSources.length" class="sources">
+      <h3>参考来源（{{ numberedSources.length }}）</h3>
+      <ul class="source-list">
+        <li v-for="item in numberedSources" :key="item.number" class="source-item">
+          <span class="source-number">[{{ item.number }}]</span>
+          <div class="source-body">
+            <div class="source-title">
+              <template v-if="item.source.source_type === 'web'">
+                <a
+                  v-if="item.source.url"
+                  :href="item.source.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {{ item.source.url }}
+                </a>
+                <span v-else>网页来源</span>
+              </template>
+              <template v-else>
+                {{ item.source.filename || `文档 ${item.source.document_id}` }}
+                <span v-if="item.source.chunk_index !== null && item.source.chunk_index !== undefined">
+                  · 片段 {{ item.source.chunk_index }}
+                </span>
+              </template>
+            </div>
+            <div class="source-score">相关度 {{ item.source.score.toFixed(3) }}</div>
+            <div class="source-text">{{ item.source.text }}</div>
+          </div>
+        </li>
       </ul>
     </div>
 
@@ -209,6 +251,57 @@ onMounted(loadTask)
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 16px;
+}
+.source-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.source-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.source-item:last-child {
+  border-bottom: none;
+}
+.source-number {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #1976d2;
+  font-size: 13px;
+}
+.source-body {
+  min-width: 0;
+}
+.source-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+  overflow-wrap: anywhere;
+}
+.source-title a {
+  color: #1976d2;
+  text-decoration: none;
+}
+.source-title a:hover {
+  text-decoration: underline;
+}
+.source-score {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+.source-text {
+  font-size: 13px;
+  color: #555;
+  margin-top: 4px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .token-usage {
   margin-top: 24px;

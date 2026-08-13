@@ -2,11 +2,13 @@ import json
 import logging
 
 from langgraph.types import Command
+from sqlalchemy import select
 
 from app.core.exceptions import (
     ResearchTaskInvalidStateError,
     ResearchTaskNotFoundError,
 )
+from app.models.document import Document
 from app.models.research_task import ResearchTaskStatus
 from app.repositories.research_task import ResearchTaskRepository
 from app.schemas.research import ResearchPlan
@@ -40,6 +42,48 @@ def _build_thread_id(task_id: int) -> dict:
             "thread_id": f"research-{task_id}",
         }
     }
+
+
+async def _enrich_sources_with_filename(
+        sources: list[dict],
+        knowledge_base_id: int,
+        task_repository: ResearchTaskRepository,
+) -> list[dict]:
+    """为本地来源补充文件名，方便报告页展示可追溯引用。"""
+    if not sources:
+        return sources
+
+    document_ids = {
+        source["document_id"]
+        for source in sources
+        if source.get("document_id") is not None
+    }
+
+    filename_map: dict[int, str] = {}
+    if document_ids:
+        result = await task_repository.session.execute(
+            select(Document.id, Document.original_filename).where(
+                Document.id.in_(document_ids),
+                Document.knowledge_base_id
+                == knowledge_base_id,
+            )
+        )
+        filename_map = dict(result.all())
+
+    enriched = []
+    for source in sources:
+        item = dict(source)
+        if item.get("source_type", "kb") == "kb":
+            document_id = item.get("document_id")
+            item["filename"] = filename_map.get(
+                document_id,
+                f"文档 {document_id}",
+            )
+        else:
+            item["filename"] = None
+        enriched.append(item)
+
+    return enriched
 
 
 async def start_research(
@@ -186,10 +230,17 @@ async def approve_research(
             for source in all_sources
         ]
 
+        # 引用溯源：为本地来源补充文件名，网页来源保留 URL
+        source_items = await _enrich_sources_with_filename(
+            sources,
+            task.knowledge_base_id,
+            task_repository,
+        )
+
         report = ResearchReport(
             topic=task.topic,
             plan=result["plan"],
-            sources=sources,
+            sources=source_items,
             answer=result["answer"],
             task_id=task.id,
         )
@@ -197,6 +248,10 @@ async def approve_research(
         await task_repository.save_report(
             task,
             result["answer"],
+        )
+        await task_repository.save_sources(
+            task,
+            json.dumps(source_items, ensure_ascii=False),
         )
         token_usage = result.get("token_usage")
         if token_usage:

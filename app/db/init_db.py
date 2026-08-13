@@ -33,3 +33,11 @@ async def init_db() -> None:
                     "ADD COLUMN token_usage TEXT"
                 )
             )
+
+        if "sources" not in columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE research_tasks "
+                    "ADD COLUMN sources TEXT"
+                )
+            )
