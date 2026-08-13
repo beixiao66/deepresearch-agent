@@ -54,6 +54,8 @@ class ResearchState(TypedDict):
     sub_answers: Annotated[list[dict], add_sub_answers]
     # 汇总后的完整报告
     answer: str
+    # 报告使用的精选证据（每子问题 Top-K 去重后，与正文引用编号一一对应）
+    curated_sources: list[dict]
     # token 用量（各节点/子 Agent 用量按阶段累加）
     token_usage: Annotated[dict, merge_token_usage]
     messages: Annotated[list[AnyMessage], add_messages]

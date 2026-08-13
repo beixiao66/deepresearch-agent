@@ -30,6 +30,7 @@ from app.services.qdrant_store import (
 from app.services.reranker import get_reranker
 from app.services.sparse_indexer import SparseIndexer
 from app.services.sparse_retriever import SparseRetriever
+from app.services.source_dedup import select_top_per_sub_question
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -261,10 +262,16 @@ async def _researcher(state: ResearchState) -> dict:
             "相关内容，因此无法给出有据可依的回答。"
         )
     else:
+        # 子回答只取 Top-5 证据，避免引用编号过多
+        top_sources = sorted(
+            sources,
+            key=lambda source: source.get("score", 0.0),
+            reverse=True,
+        )[:5]
         sources_text = "\n".join(
             f"[{index}] {source['text']}"
             for index, source in enumerate(
-                sources,
+                top_sources,
                 start=1,
             )
         )
@@ -314,15 +321,17 @@ async def _report(state: ResearchState) -> dict:
         for index, item in enumerate(sub_answers, start=1)
     )
 
-    # 从各子 Agent 的回答中收集证据片段
-    all_sources: list[dict] = []
-    for item in sub_answers:
-        all_sources.extend(item.get("sources", []))
+    # 每个子问题按相关度取 Top-K 证据，合并去重后作为报告引用来源。
+    # 精选集合写入 state，保证正文引用编号与持久化来源一一对应。
+    curated_sources = select_top_per_sub_question(
+        sub_answers,
+        top_k=5,
+    )
 
     sources_text = "\n".join(
         f"[{index}] {source['text']}"
         for index, source in enumerate(
-            all_sources,
+            curated_sources,
             start=1,
         )
     )
@@ -343,6 +352,7 @@ async def _report(state: ResearchState) -> dict:
     )
     return {
         "answer": answer,
+        "curated_sources": curated_sources,
         "token_usage": {
             "report": report_counters,
         },
