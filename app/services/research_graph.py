@@ -349,6 +349,7 @@ async def _report(state: ResearchState) -> dict:
         state["question"],
         context,
         report_counters,
+        max_citation=len(curated_sources),
     )
     return {
         "answer": answer,

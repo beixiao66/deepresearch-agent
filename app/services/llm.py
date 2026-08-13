@@ -137,15 +137,38 @@ def _strip_promotional_tail(text: str) -> str:
     return text.rstrip().rstrip("。；;").rstrip()
 
 
+# 引用编号：形如 [1] 或 [1][2][3]
+_CITATION_PATTERN = re.compile(r"\[(\d+)\]")
+
+
+def _strip_invalid_citations(text: str, max_citation: int) -> str:
+    """删除超出来源数量的引用编号（模型可能编造不存在的 [n]）。
+
+    只删除编号本身（如 [5]），保留正文文字。例如：
+    "混合检索 [1][3][5]" → "混合检索 [1][3]"
+    """
+    if max_citation <= 0:
+        return text
+
+    def replace(match: re.Match) -> str:
+        number = int(match.group(1))
+        if number > max_citation:
+            return ""
+        return match.group(0)
+
+    return _CITATION_PATTERN.sub(replace, text)
+
+
 async def generate_report(
         question: str,
         sources_text: str,
         usage_counters: dict | None = None,
+        max_citation: int = 0,
 ) -> str:
     """生成研究报告，返回报告文本并累加 token 用量。
 
-    生成后过滤末尾的推荐性段落，避免报告出现无法承接的
-    "如需帮助请联系我"类内容。
+    生成后过滤末尾的推荐性段落，并删除超出来源数量的引用编号，
+    避免报告出现无法承接的 "如需帮助" 内容和编造的 [n] 引用。
     """
     messages = [
         SystemMessage(
@@ -153,6 +176,8 @@ async def generate_report(
                 "你是一名研究助手。请基于用户问题与检索到的资料，"
                 "生成结构清晰、有据可依的研究报告。"
                 "报告应包含：结论、关键证据（引用编号）、局限与参考来源。"
+                f"资料编号范围是 [1] 到 [{max_citation}]，"
+                "只能引用这个范围内的编号，绝对不要编造不存在的编号。"
                 "每条结论最多引用 3-5 个最直接相关的编号，"
                 "不要罗列全部编号，避免大段引用标记影响阅读。"
                 "报告在结论、参考来源之后立即结束，"
@@ -174,7 +199,8 @@ async def generate_report(
     if usage_counters is not None:
         _record_usage(usage_counters, response)
 
-    return _strip_promotional_tail(response.content)
+    cleaned = _strip_promotional_tail(response.content)
+    return _strip_invalid_citations(cleaned, max_citation)
 
 
 async def generate_sub_answer(

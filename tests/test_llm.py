@@ -213,3 +213,50 @@ def test_strip_promotional_tail_keeps_normal_report() -> None:
     cleaned = _strip_promotional_tail(report)
 
     assert cleaned == report
+
+
+def test_strip_invalid_citations_removes_out_of_range() -> None:
+    from app.services.llm import _strip_invalid_citations
+
+    text = "混合检索 [1][3][5] 与切块 [2][99] 相关"
+    cleaned = _strip_invalid_citations(text, max_citation=4)
+
+    assert cleaned == "混合检索 [1][3] 与切块 [2] 相关"
+
+
+def test_strip_invalid_citations_keeps_valid_only() -> None:
+    from app.services.llm import _strip_invalid_citations
+
+    text = "全部有效 [1][2][3]"
+    cleaned = _strip_invalid_citations(text, max_citation=3)
+
+    assert cleaned == text
+
+
+def test_generate_report_strips_invalid_citations(
+        monkeypatch,
+) -> None:
+    from app.services.llm import generate_report
+
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(
+        return_value=build_ai_message(
+            "结论 [1][5] 有效引用",
+            input_tokens=10,
+            output_tokens=5,
+        )
+    )
+    monkeypatch.setattr(
+        "app.services.llm.get_llm",
+        lambda: mock_llm,
+    )
+
+    answer = asyncio.run(
+        generate_report(
+            "问题",
+            "[1] 资料A\n[2] 资料B",
+            max_citation=2,
+        )
+    )
+
+    assert answer == "结论 [1] 有效引用"
