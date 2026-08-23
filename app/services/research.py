@@ -24,11 +24,11 @@ logger = logging.getLogger(__name__)
 _research_graph = None
 
 
-def get_research_graph():
+async def get_research_graph():
     global _research_graph
 
     if _research_graph is None:
-        _research_graph = build_research_graph()
+        _research_graph = await build_research_graph()
 
     return _research_graph
 
@@ -98,7 +98,7 @@ async def start_research(
     )
     await task_repository.session.commit()
 
-    graph = get_research_graph()
+    graph = await get_research_graph()
 
     try:
         await task_repository.update_status(
@@ -192,14 +192,14 @@ async def approve_research(
             task_id=task.id,
         )
 
-    graph = get_research_graph()
-
     try:
         await task_repository.update_status(
             task,
             ResearchTaskStatus.RUNNING,
         )
         await task_repository.session.commit()
+
+        graph = await get_research_graph()
 
         # 第二次 invoke：Command(resume=...) 从 interrupt 处恢复
         result = await graph.ainvoke(

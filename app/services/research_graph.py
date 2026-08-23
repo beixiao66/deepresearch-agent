@@ -1,11 +1,14 @@
 import asyncio
 import logging
+import os
 
+import aiosqlite
 import anyio
 from functools import lru_cache
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Send, interrupt
 
@@ -35,6 +38,15 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# checkpoint 持久化时，state 里的自定义类型需显式注册序列化器白名单，
+# 否则 LangGraph 的 jsonplus 序列化会告警（未来版本将直接拒绝反序列化）。
+# 图状态中唯一的自定义类型是 ResearchPlan，消息通道虽声明但从未使用。
+_CHECKPOINT_SERDE = JsonPlusSerializer(
+    allowed_msgpack_modules=(
+        ("app.schemas.research", "ResearchPlan"),
+    )
+)
+
 # 进度事件钩子：SSE 时由服务层替换为实际发事件的回调
 _progress_hook = None
 
@@ -48,6 +60,50 @@ def set_progress_hook(hook) -> None:
 def _emit(event: dict) -> None:
     if _progress_hook is not None:
         _progress_hook(event)
+
+
+# 持久化 checkpointer 单例：SQLite 落盘，进程重启后执行现场仍可恢复
+_checkpointer: AsyncSqliteSaver | None = None
+
+
+async def get_checkpointer() -> AsyncSqliteSaver:
+    """构建全局复用的持久化 checkpointer（AsyncSqliteSaver）。
+
+    直接用 aiosqlite 连接构造（不走 from_conn_string 的 async with，
+    那是短生命周期用法，退出上下文会关闭连接）。连接常驻进程，
+    与应用的 SQLite 数据库同目录，由配置 checkpoint_db_path 指定。
+    """
+    global _checkpointer
+    if _checkpointer is None:
+        settings = get_settings()
+        db_dir = os.path.dirname(settings.checkpoint_db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
+        conn = await aiosqlite.connect(settings.checkpoint_db_path)
+        checkpointer = AsyncSqliteSaver(conn, serde=_CHECKPOINT_SERDE)
+        # 建表（幂等）；首次读写时也会自动调用，这里提前确保文件可写
+        await checkpointer.setup()
+
+        _checkpointer = checkpointer
+        logger.info(
+            "persistent checkpointer initialized: %s",
+            settings.checkpoint_db_path,
+        )
+    return _checkpointer
+
+
+async def close_checkpointer() -> None:
+    """应用关闭时关闭 checkpointer 的数据库连接。
+
+    aiosqlite 的后台线程是非守护线程，连接不关闭会阻止进程退出
+    （uvicorn 优雅停机、pytest 结束都会 hang 住）。
+    """
+    global _checkpointer
+    if _checkpointer is not None:
+        await _checkpointer.conn.close()
+        _checkpointer = None
+        logger.info("persistent checkpointer closed")
 
 
 @lru_cache
@@ -360,7 +416,7 @@ async def _report(state: ResearchState) -> dict:
     }
 
 
-def build_research_graph():
+async def build_research_graph():
     """构建多 Agent 主流程：
 
     规划 -> 审核(人工确认) -> 分发(并行子研究员) -> 聚合报告。
@@ -386,7 +442,8 @@ def build_research_graph():
     graph.add_edge("researcher", "report")
     graph.add_edge("report", END)
 
-    # interrupt 需要 checkpoint 保存执行现场
-    checkpointer = MemorySaver()
+    # interrupt 需要 checkpoint 保存执行现场；AsyncSqliteSaver 持久化到
+    # SQLite，进程重启后同一 thread_id 仍可暂停/恢复
+    checkpointer = await get_checkpointer()
 
     return graph.compile(checkpointer=checkpointer)

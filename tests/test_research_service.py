@@ -15,8 +15,10 @@ from app.services.research_graph import (
     _report,
     _researcher,
     build_research_graph,
+    close_checkpointer,
+    get_checkpointer,
 )
-from langgraph.types import Send
+from langgraph.types import Command, Send
 
 
 def build_plan() -> ResearchPlan:
@@ -32,37 +34,130 @@ def build_plan() -> ResearchPlan:
 
 
 def test_build_research_graph_has_expected_structure() -> None:
-    graph = build_research_graph()
+    graph = asyncio.run(build_research_graph())
+    try:
+        nodes = graph.get_graph().nodes
+        edges = graph.get_graph().edges
 
-    nodes = graph.get_graph().nodes
-    edges = graph.get_graph().edges
+        assert "plan" in nodes
+        assert "review" in nodes
+        assert "dispatch" in nodes
+        assert "researcher" in nodes
+        assert "report" in nodes
+        assert "__start__" in nodes
+        assert "__end__" in nodes
 
-    assert "plan" in nodes
-    assert "review" in nodes
-    assert "dispatch" in nodes
-    assert "researcher" in nodes
-    assert "report" in nodes
-    assert "__start__" in nodes
-    assert "__end__" in nodes
+        plain_edges = [
+            (edge.source, edge.target)
+            for edge in edges
+            if not edge.conditional
+        ]
+        assert ("__start__", "plan") in plain_edges
+        assert ("plan", "review") in plain_edges
+        assert ("review", "dispatch") in plain_edges
+        assert ("researcher", "report") in plain_edges
+        assert ("report", "__end__") in plain_edges
 
-    plain_edges = [
-        (edge.source, edge.target)
-        for edge in edges
-        if not edge.conditional
-    ]
-    assert ("__start__", "plan") in plain_edges
-    assert ("plan", "review") in plain_edges
-    assert ("review", "dispatch") in plain_edges
-    assert ("researcher", "report") in plain_edges
-    assert ("report", "__end__") in plain_edges
+        # dispatch 通过条件边（Send 并行分发）到 researcher
+        conditional_edges = [
+            (edge.source, edge.target)
+            for edge in edges
+            if edge.conditional
+        ]
+        assert ("dispatch", "researcher") in conditional_edges
+    finally:
+        # 关闭持久化 checkpointer 连接，避免 aiosqlite 后台线程阻止进程退出
+        asyncio.run(close_checkpointer())
 
-    # dispatch 通过条件边（Send 并行分发）到 researcher
-    conditional_edges = [
-        (edge.source, edge.target)
-        for edge in edges
-        if edge.conditional
-    ]
-    assert ("dispatch", "researcher") in conditional_edges
+
+def test_research_graph_resumes_after_checkpointer_reopen(
+        monkeypatch,
+) -> None:
+    """两阶段执行全链路：interrupt 暂停 → 关闭并重开 checkpointer
+    （模拟进程重启）→ Command(resume) 恢复并生成最终报告。
+
+    这是把 MemorySaver 换成持久化 SqliteSaver 的核心收益验证。
+    """
+    import uuid
+
+    plan = build_plan()
+    # 每次运行用唯一 thread_id：checkpoint 按 thread 隔离，
+    # 避免共享 DB 文件时读到上次运行遗留的中断现场（状态累积污染）
+    thread_id = f"research-test-{uuid.uuid4().hex[:12]}"
+
+    # mock 外部调用：计划生成 / 子回答 / 报告生成 / 混合检索 / 数据库会话
+    monkeypatch.setattr(
+        "app.services.research_graph.generate_research_plan",
+        AsyncMock(return_value=plan),
+    )
+    monkeypatch.setattr(
+        "app.services.research_graph.generate_sub_answer",
+        AsyncMock(return_value="子问题回答。"),
+    )
+    monkeypatch.setattr(
+        "app.services.research_graph.generate_report",
+        AsyncMock(return_value="## 最终报告\n结论见 [1]。"),
+    )
+
+    class FakeResult:
+        document_id = 1
+        chunk_index = 0
+        text = "检索到的证据文本"
+        score = 0.9
+
+    monkeypatch.setattr(
+        "app.services.document_retriever.DocumentRetriever.retrieve_hybrid",
+        AsyncMock(return_value=[FakeResult()]),
+    )
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def execute(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(
+        "app.services.research_graph.AsyncSessionLocal",
+        lambda: FakeSession(),
+    )
+
+    config = {"configurable": {"thread_id": thread_id}}
+
+    async def main() -> None:
+        # 阶段一：跑到 review 的 interrupt 暂停
+        graph = await build_research_graph()
+        snapshot = await graph.ainvoke(
+            {
+                "question": "Agentic RAG",
+                "knowledge_base_id": 1,
+                "use_web_search": False,
+            },
+            config=config,
+        )
+        assert snapshot.get("plan") == plan
+
+        # 模拟进程重启：关闭 checkpointer 连接，重新打开同一数据库文件
+        await close_checkpointer()
+        assert await get_checkpointer() is not None  # 重新初始化
+
+        # 阶段二：同一 thread_id 恢复执行（等价于重启后用户再次确认计划）
+        graph2 = await build_research_graph()
+        result = await graph2.ainvoke(
+            Command(resume={"approved": True}),
+            config=config,
+        )
+
+        assert result["answer"] == "## 最终报告\n结论见 [1]。"
+        assert result["plan"] == plan
+        assert len(result["sub_answers"]) == 2
+
+        await close_checkpointer()
+
+    asyncio.run(main())
 
 
 def test_fanout_returns_send_for_each_sub_question() -> None:
@@ -95,7 +190,7 @@ def test_start_research_pauses_at_plan_review(
     )
     monkeypatch.setattr(
         "app.services.research.get_research_graph",
-        lambda: fake_graph,
+        AsyncMock(return_value=fake_graph),
     )
 
     request = ResearchRequest(
@@ -162,7 +257,7 @@ def test_approve_research_completes_report(
     )
     monkeypatch.setattr(
         "app.services.research.get_research_graph",
-        lambda: fake_graph,
+        AsyncMock(return_value=fake_graph),
     )
 
     from app.models.research_task import (
@@ -214,7 +309,7 @@ def test_approve_research_cancelled_marks_cancelled(
     )
     monkeypatch.setattr(
         "app.services.research.get_research_graph",
-        lambda: fake_graph,
+        AsyncMock(return_value=fake_graph),
     )
 
     from app.models.research_task import (

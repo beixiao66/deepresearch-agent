@@ -23,6 +23,9 @@ class Settings(BaseSettings):
         "CRITICAL",
     ] = "INFO"
     database_url: str = "sqlite+aiosqlite:///./data/deepresearch.db"
+    # LangGraph 持久化 checkpointer（AsyncSqliteSaver）的数据库文件，
+    # 进程重启后研究任务的执行现场（interrupt 暂停点）仍可恢复
+    checkpoint_db_path: str = "data/langgraph_checkpoints.db"
     upload_directory: str = "data/uploads"
     max_upload_size: int = 10 * 1024 * 1024
     upload_chunk_size: int = 1024 * 1024

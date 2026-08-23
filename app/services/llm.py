@@ -26,6 +26,7 @@ def get_llm() -> ChatOpenAI:
     )
 
 
+
 def _record_usage(counters: dict, response) -> None:
     """从响应中提取 token 用量并累加到计数器。
 

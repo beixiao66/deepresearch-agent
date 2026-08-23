@@ -13,6 +13,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.db.init_db import init_db
 from app.db.session import engine
+from app.services.research_graph import close_checkpointer
 
 
 @asynccontextmanager
@@ -22,6 +23,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
     await engine.dispose()
+    await close_checkpointer()
 
 
 configure_logging()
