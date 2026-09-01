@@ -13,6 +13,15 @@ from app.core.config import get_settings
 from app.schemas.research import ResearchPlan
 
 
+# chat 多轮对话系统提示词：有记忆后可基于历史给出建议
+CHAT_SYSTEM_PROMPT = (
+    "你是一名 AI 技术研究助手，正在进行多轮对话。"
+    "请准确、简洁地回答用户问题；不确定时应明确说明，不要编造信息。"
+    "根据对话历史与用户已表达的需求，可以主动给出进一步的研究方向、"
+    "补充资料或实用建议。"
+)
+
+
 @lru_cache
 def get_llm() -> ChatOpenAI:
     settings = get_settings()
@@ -109,37 +118,6 @@ async def generate_follow_up_queries(
     ][:3]
 
 
-# 报告末尾推荐性段落起始词：命中即截断（模型有时会自行添加"如需帮助"类内容）
-_PROMOTIONAL_PATTERNS = [
-    r"如需[，,。]?我",
-    r"如果需要[，,。]?我",
-    r"如您需要",
-    r"若需",
-    r"若您需要",
-    r"请随时告知",
-    r"欢迎随时",
-    r"如果您有任何",
-    r"我可以为您",
-    r"我可以为你",
-    r"有需要[，,。]?请",
-]
-
-
-def _strip_promotional_tail(text: str) -> str:
-    """删除报告末尾的推荐性段落（模型自行添加的'如需帮助'类内容）。
-
-    找到第一个匹配位置后，从该位置截断；同时清理截断点残留的
-    空行和列表符号。
-    """
-    for pattern in _PROMOTIONAL_PATTERNS:
-        match = re.search(pattern, text)
-        if match:
-            text = text[: match.start()]
-            break
-
-    return text.rstrip().rstrip("。；;").rstrip()
-
-
 # 引用编号：形如 [1] 或 [1][2][3]
 _CITATION_PATTERN = re.compile(r"\[(\d+)\]")
 # 区间引用：形如 [1]–[5] 或 [1]-[5]（模型常写"基于 [1]–[5]"）
@@ -204,8 +182,8 @@ async def generate_report(
 ) -> str:
     """生成研究报告，返回报告文本并累加 token 用量。
 
-    生成后过滤末尾的推荐性段落，并删除超出来源数量的引用编号，
-    避免报告出现无法承接的 "如需帮助" 内容和编造的 [n] 引用。
+    生成后删除超出来源数量的引用编号（模型可能编造不存在的 [n]），
+    避免报告出现无法承接的 [n] 引用。
     """
     messages = [
         SystemMessage(
@@ -217,10 +195,7 @@ async def generate_report(
                 "只能引用这个范围内的编号，绝对不要编造不存在的编号。"
                 "每条结论最多引用 3-5 个最直接相关的编号，"
                 "不要罗列全部编号，避免大段引用标记影响阅读。"
-                "报告在结论、参考来源之后立即结束，"
-                "不要输出任何'如需帮助请联系我'、'我可以为您提供'、"
-                "'请随时告知需求'之类的推荐、承诺或引导性内容，"
-                "不要把模型能力宣传或后续服务建议写进报告。"
+                "报告在结论、参考来源之后立即结束。"
             )
         ),
         HumanMessage(
@@ -236,8 +211,7 @@ async def generate_report(
     if usage_counters is not None:
         _record_usage(usage_counters, response)
 
-    cleaned = _strip_promotional_tail(response.content)
-    return _strip_invalid_citations(cleaned, max_citation)
+    return _strip_invalid_citations(response.content, max_citation)
 
 
 async def generate_sub_answer(
@@ -255,7 +229,7 @@ async def generate_sub_answer(
                 "每条结论最多引用 3-5 个最直接相关的编号，"
                 "不要罗列全部编号。"
                 "如果资料不足以回答，请明确说明'暂无足够资料'，"
-                "不要编造内容，不要输出任何'如需帮助'类推荐。"
+                "不要编造内容。"
             )
         ),
         HumanMessage(
@@ -271,4 +245,4 @@ async def generate_sub_answer(
     if usage_counters is not None:
         _record_usage(usage_counters, response)
 
-    return _strip_promotional_tail(response.content)
+    return response.content

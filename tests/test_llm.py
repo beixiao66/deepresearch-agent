@@ -5,7 +5,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.schemas.research import ResearchPlan
 from app.services.llm import (
-    _strip_promotional_tail,
     generate_follow_up_queries,
     generate_report,
     generate_research_plan,
@@ -189,32 +188,6 @@ def test_generate_report_records_usage(
     }
 
 
-def test_strip_promotional_tail_removes_next_step_section() -> None:
-    report = (
-        "## 结论\n\n简历整体结构完整，技术栈匹配目标岗位。\n\n"
-        "## 参考来源\n\n[1] 简历正文\n\n"
-        "如需，我可为您：\n\n"
-        "生成一份优化后的 Markdown 简历模板；\n"
-        "撰写 STAR 描述稿。\n"
-        "请随时告知您的进一步需求。"
-    )
-
-    cleaned = _strip_promotional_tail(report)
-
-    assert "如需" not in cleaned
-    assert "STAR" not in cleaned
-    assert "请随时" not in cleaned
-    assert cleaned.endswith("[1] 简历正文")
-
-
-def test_strip_promotional_tail_keeps_normal_report() -> None:
-    report = "## 结论\n\n这是正常报告内容。\n\n## 参考来源\n\n[1] 来源"
-
-    cleaned = _strip_promotional_tail(report)
-
-    assert cleaned == report
-
-
 def test_strip_invalid_citations_removes_out_of_range() -> None:
     from app.services.llm import _strip_invalid_citations
 
@@ -287,3 +260,63 @@ def test_strip_invalid_citations_keeps_valid_range() -> None:
     cleaned = _strip_invalid_citations(text, max_citation=4)
 
     assert cleaned == text
+
+
+def test_chat_system_prompt_allows_suggestions() -> None:
+    from app.services.llm import CHAT_SYSTEM_PROMPT
+
+    assert "简洁地回答" in CHAT_SYSTEM_PROMPT
+    assert "建议" in CHAT_SYSTEM_PROMPT
+    assert "多轮" in CHAT_SYSTEM_PROMPT
+
+
+def test_generate_report_keeps_promotional_tail(monkeypatch) -> None:
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(
+        return_value=build_ai_message("结论。\n\n如需帮助请联系我。")
+    )
+    monkeypatch.setattr(
+        "app.services.llm.get_llm",
+        lambda: mock_llm,
+    )
+
+    answer = asyncio.run(
+        generate_report("问题", "[1] 资料", max_citation=1)
+    )
+
+    # 不再截断"如需帮助"类结尾（与"不要推荐"限制一起删除）
+    assert "如需帮助请联系我" in answer
+
+
+def test_generate_sub_answer_keeps_promotional_tail(monkeypatch) -> None:
+    from app.services.llm import generate_sub_answer
+
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(
+        return_value=build_ai_message("回答。\n\n如需帮助请联系我。")
+    )
+    monkeypatch.setattr(
+        "app.services.llm.get_llm",
+        lambda: mock_llm,
+    )
+
+    answer = asyncio.run(
+        generate_sub_answer("子问题", "[1] 资料")
+    )
+
+    assert "如需帮助请联系我" in answer
+
+
+def test_report_prompt_has_no_recommendation_ban(monkeypatch) -> None:
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(return_value=build_ai_message("报告"))
+    monkeypatch.setattr(
+        "app.services.llm.get_llm",
+        lambda: mock_llm,
+    )
+
+    asyncio.run(generate_report("问题", "[1] 资料", max_citation=1))
+
+    system_content = mock_llm.ainvoke.await_args.args[0][0].content
+    assert "不要输出" not in system_content
+    assert "推荐" not in system_content
