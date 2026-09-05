@@ -9,6 +9,7 @@ import ErrorDialog from "./components/ErrorDialog.vue"
       <RouterLink to="/knowledge-bases">知识库</RouterLink>
       <RouterLink to="/research/create">创建研究</RouterLink>
       <RouterLink to="/research/tasks">研究历史</RouterLink>
+      <RouterLink to="/chat">对话</RouterLink>
     </nav>
     <main class="main">
       <RouterView />

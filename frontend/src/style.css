@@ -290,3 +290,16 @@ code {
     border-right-color: var(--border);
   }
 }
+
+/* ===== 深色开发者工具风设计令牌（记忆功能起用） ===== */
+:root {
+  --bg: #0b0e14;
+  --bg-panel: #12161f;
+  --bg-elevated: #171c28;
+  --border: rgba(255, 255, 255, 0.08);
+  --accent: #2dd4bf;
+  --accent-dim: rgba(45, 212, 191, 0.12);
+  --text: #e6e9ef;
+  --text-dim: #9aa3b2;
+  --mono: ui-monospace, "JetBrains Mono", Consolas, monospace;
+}

@@ -7,6 +7,7 @@ import CreateResearch from "./views/CreateResearch.vue"
 import ResearchRun from "./views/ResearchRun.vue"
 import ResearchReport from "./views/ResearchReport.vue"
 import ResearchTasks from "./views/ResearchTasks.vue"
+import Chat from "./views/Chat.vue"
 
 const router = createRouter({
   history: createWebHistory(),
@@ -17,6 +18,7 @@ const router = createRouter({
     { path: "/research/run/:taskId", component: ResearchRun },
     { path: "/research/report/:taskId", component: ResearchReport },
     { path: "/research/tasks", component: ResearchTasks },
+    { path: "/chat", component: Chat },
   ],
 })
 

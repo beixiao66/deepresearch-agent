@@ -221,3 +221,28 @@ async function consumeSse(response, onEvent) {
     }
   }
 }
+
+// ===== 对话 =====
+
+export async function chatMessage(question, conversationId) {
+  const response = await request("/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      question,
+      conversation_id: conversationId || null,
+    }),
+  })
+  return response.json()
+}
+
+export async function listConversations() {
+  const response = await request("/chat/conversations")
+  return response.json()
+}
+
+export async function getConversationMessages(conversationId) {
+  const response = await request(
+    `/chat/conversations/${conversationId}/messages`
+  )
+  return response.json()
+}
