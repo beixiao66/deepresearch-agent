@@ -17,4 +17,5 @@ python-pptx>=1.0,<2
 langchain-text-splitters>=1.1,<2
 langgraph>=1.0,<2
 langgraph-checkpoint-sqlite>=3.0,<4
+tiktoken>=0.8,<1  # chat_graph.py 直接依赖（token 估算摘要阈值）
 tavily-python>=0.7,<1

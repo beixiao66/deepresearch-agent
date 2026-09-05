@@ -9,7 +9,6 @@ from typing import Annotated, TypedDict
 
 from langchain_core.messages import (
     AIMessage,
-    HumanMessage,
     RemoveMessage,
     SystemMessage,
 )
@@ -68,7 +67,7 @@ async def _summarize_node(state: ChatState) -> dict:
     if total_tokens <= TOKEN_BOUNDARY:
         return {}
 
-    old_messages = messages[:-KEEP_RAW]
+    old_messages = messages[:-KEEP_RAW] or messages
     if not old_messages:
         return {}
 
@@ -76,6 +75,10 @@ async def _summarize_node(state: ChatState) -> dict:
     if summary:
         prompt.append(SystemMessage(content=f"已有对话摘要：\n{summary}"))
     prompt.extend(old_messages)
+    prompt.append(SystemMessage(
+        content="请把以上对话与已有摘要压缩为一段连贯摘要，"
+                "保留关键结论、偏好与未决问题。"
+    ))
 
     result = await get_llm().ainvoke(prompt)
     removes = [

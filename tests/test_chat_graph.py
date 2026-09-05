@@ -131,8 +131,35 @@ def test_summarize_node_compresses_old_messages(monkeypatch) -> None:
 
     mock_llm.ainvoke.assert_awaited_once()
     prompt = mock_llm.ainvoke.await_args.args[0]
-    assert len(prompt) == 6  # 旧摘要 + 5 条老消息
+    assert len(prompt) == 7  # 旧摘要 + 5 条老消息 + 压缩指令
     assert "旧摘要" in prompt[0].content
+    assert "压缩" in prompt[-1].content
+
+
+def test_summarize_node_compresses_all_when_under_keep_raw(monkeypatch) -> None:
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="大消息摘要"))
+    monkeypatch.setattr(
+        "app.services.chat_graph.get_llm",
+        lambda: mock_llm,
+    )
+    monkeypatch.setattr(
+        "app.services.chat_graph.TOKEN_BOUNDARY",
+        1,  # 必然超阈值
+    )
+
+    # 消息数不超过 KEEP_RAW 但总 token 超阈值：全部压缩，不留原文
+    messages = [
+        HumanMessage(content=f"很长的问题内容{i}", id=f"big-{i}")
+        for i in range(3)
+    ]
+    result = asyncio.run(_summarize_node({
+        "messages": messages,
+        "summary": "",
+    }))
+
+    assert result["summary"] == "大消息摘要"
+    assert [r.id for r in result["messages"]] == ["big-0", "big-1", "big-2"]
 
 
 def test_chat_graph_returns_latest_message(monkeypatch, temp_checkpointer) -> None:
@@ -206,5 +233,54 @@ def test_chat_graph_different_threads_are_isolated(
         contents = [m.content for m in sent]
         assert sum("线程A" in c for c in contents) == 2
         assert "线程B" not in contents
+
+    asyncio.run(main())
+
+
+def test_chat_graph_summarize_removes_old_and_injects_summary(
+        monkeypatch, temp_checkpointer
+) -> None:
+    """集成测试：经真实 checkpointer 验证摘要删除原文并注入第二轮。"""
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(
+        side_effect=[
+            AIMessage(content="合并摘要"),  # 第一轮 summarize
+            AIMessage(content="答1"),      # 第一轮 chat
+            AIMessage(content="答2"),      # 第二轮 chat
+        ]
+    )
+    monkeypatch.setattr(
+        "app.services.chat_graph.get_llm",
+        lambda: mock_llm,
+    )
+    monkeypatch.setattr(
+        "app.services.chat_graph.get_checkpointer",
+        AsyncMock(side_effect=temp_checkpointer),
+    )
+    monkeypatch.setattr(
+        "app.services.chat_graph.TOKEN_BOUNDARY",
+        50,
+    )
+
+    long_question = "长问题" * 30  # 约 90 token，必然超 50 阈值
+
+    async def main() -> None:
+        graph = await build_chat_graph()
+        thread = {"configurable": {"thread_id": "chat-summary-1"}}
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content=long_question)]},
+            config=thread,
+        )
+        result2 = await graph.ainvoke(
+            {"messages": [HumanMessage(content="问题2")]},
+            config=thread,
+        )
+
+        sent = mock_llm.ainvoke.await_args.args[0]
+        contents = [m.content for m in sent]
+        assert "合并摘要" in contents[1]           # 摘要注入在 system 之后
+        assert not any(long_question in c for c in contents)  # 原文已删除
+        assert "问题2" in contents[-1]             # 新消息保留
+        assert result2["messages"][-1].content == "答2"
 
     asyncio.run(main())
