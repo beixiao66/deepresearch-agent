@@ -1,28 +1,58 @@
 from fastapi import APIRouter
-from langchain_core.messages import SystemMessage, HumanMessage
 
+from app.api.dependencies import DatabaseSession
 from app.core.config import get_settings
-from app.schemas.chat import ChatResponse, ChatRequest
-from app.services.llm import get_llm
-
+from app.schemas.chat import (
+    ChatRequest,
+    ChatResponse,
+    ConversationMessages,
+    ConversationSummary,
+)
+from app.services.chat import (
+    get_conversation_messages,
+    list_conversations,
+    send_message,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-@router.post("",response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
-    messages = [
-         SystemMessage(
-            content=(
-                "你是一名 AI 技术研究助手。"
-                "请准确、简洁地回答用户问题；"
-                "不确定时应明确说明，不要编造信息。"
-            )
-        ),
-        HumanMessage(content=request.question)
-    ]
-    response = await get_llm().ainvoke(messages)
-    settings = get_settings()
+
+@router.post("", response_model=ChatResponse)
+async def chat(
+        request: ChatRequest,
+        session: DatabaseSession,
+) -> ChatResponse:
+    answer, conversation_id = await send_message(
+        request.question,
+        request.conversation_id,
+        session,
+    )
     return ChatResponse(
-        answer=str(response.content),
-        model=settings.llm_model,
+        answer=answer,
+        model=get_settings().llm_model,
+        conversation_id=conversation_id,
+    )
+
+
+@router.get("/conversations", response_model=list[ConversationSummary])
+async def list_chat_conversations(
+        session: DatabaseSession,
+) -> list[ConversationSummary]:
+    return [
+        ConversationSummary(**item)
+        for item in await list_conversations(session)
+    ]
+
+
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=ConversationMessages,
+)
+async def read_conversation_messages(
+        conversation_id: str,
+) -> ConversationMessages:
+    messages = await get_conversation_messages(conversation_id)
+    return ConversationMessages(
+        conversation_id=conversation_id,
+        messages=messages,
     )
