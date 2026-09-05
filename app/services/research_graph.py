@@ -142,8 +142,8 @@ async def _plan_research(state: ResearchState) -> dict:
         parts = []
         if preferences:
             parts.append(
-                f"用户偏好：{preferences.get('report_style', 'detailed')}报告、"
-                f"{preferences.get('report_language', 'zh')}语言"
+                f"报告风格：{preferences.get('report_style', 'detailed')}；"
+                f"报告语言：{preferences.get('report_language', 'zh')}"
             )
         if history:
             recent = "、".join(
