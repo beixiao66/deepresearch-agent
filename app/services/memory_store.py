@@ -70,7 +70,8 @@ async def get_preferences(user_id: int = 1) -> dict:
     item = await store.aget(_preferences_namespace(user_id), "preferences")
     if item is None:
         return dict(DEFAULT_PREFERENCES)
-    return item.value
+    # 旧数据缺字段时用默认值补齐，避免响应校验 500
+    return {**DEFAULT_PREFERENCES, **item.value}
 
 
 async def save_preferences(user_id: int, preferences: dict) -> None:
