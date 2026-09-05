@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone
 
 from langgraph.types import Command
 from sqlalchemy import select
@@ -16,6 +17,7 @@ from app.schemas.research_report import (
     ResearchReport,
     ResearchRequest,
 )
+from app.services.memory_store import append_research_history
 from app.services.research_graph import build_research_graph
 from app.services.source_dedup import dedupe_sources
 
@@ -267,6 +269,24 @@ async def approve_research(
                 json.dumps(token_usage, ensure_ascii=False),
             )
         await task_repository.session.commit()
+
+        # 长期记忆：自动记录本次研究主题（失败不影响主流程）
+        try:
+            await append_research_history(
+                user_id=1,
+                entry={
+                    "topic": task.topic,
+                    "task_id": task.id,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "summary": (result["answer"] or "").replace("\n", " ")[:100],
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "append research history failed: task_id=%d, error=%s",
+                task.id,
+                exc,
+            )
 
         logger.info(
             "research completed: task_id=%d, sources=%d",

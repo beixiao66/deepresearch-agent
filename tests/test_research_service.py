@@ -259,6 +259,10 @@ def test_approve_research_completes_report(
         "app.services.research.get_research_graph",
         AsyncMock(return_value=fake_graph),
     )
+    monkeypatch.setattr(
+        "app.services.research.append_research_history",
+        AsyncMock(),
+    )
 
     from app.models.research_task import (
         ResearchTask,
@@ -396,3 +400,63 @@ def test_researcher_without_evidence_returns_placeholder(
     assert "暂无足够资料" in sub_answer["answer"]
     # 无证据时不调用 LLM（子 Agent 内部没有生成回答）
     mock_llm.ainvoke.assert_not_awaited()
+
+
+def test_approve_research_appends_history(
+        monkeypatch,
+) -> None:
+    plan = build_plan()
+
+    fake_graph = Mock()
+    fake_graph.ainvoke = AsyncMock(
+        return_value={
+            "plan": plan,
+            "sub_answers": [],
+            "answer": "## 报告\n结论。",
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.research.get_research_graph",
+        AsyncMock(return_value=fake_graph),
+    )
+
+    mock_append = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.research.append_research_history",
+        mock_append,
+    )
+
+    from app.models.research_task import (
+        ResearchTask,
+        ResearchTaskStatus,
+    )
+
+    task = ResearchTask(
+        id=42,
+        topic="Agentic RAG",
+        knowledge_base_id=1,
+        status=ResearchTaskStatus.AWAITING_APPROVAL.value,
+    )
+
+    task_repository = Mock()
+    task_repository.get_by_id = AsyncMock(return_value=task)
+    task_repository.update_status = AsyncMock()
+    task_repository.save_report = AsyncMock()
+    task_repository.save_sources = AsyncMock()
+    task_repository.save_token_usage = AsyncMock()
+    task_repository.session = Mock()
+    task_repository.session.commit = AsyncMock()
+    task_repository.session.execute = AsyncMock(
+        return_value=Mock(all=lambda: [])
+    )
+
+    asyncio.run(
+        approve_research(42, True, task_repository)
+    )
+
+    mock_append.assert_awaited_once()
+    entry = mock_append.await_args.kwargs["entry"]
+    assert entry["topic"] == "Agentic RAG"
+    assert entry["task_id"] == 42
+    assert entry["summary"] == "## 报告 结论。"
+    assert mock_append.await_args.kwargs["user_id"] == 1
