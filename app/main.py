@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.chat import router as chat_router
+from app.api.routes.memory import router as memory_router
 from app.api.routes.research import router as research_router
 from app.api.routes.knowledge_base import router as knowledge_base_router
 from app.api.routes.documents import router as documents_router
@@ -44,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(chat_router, prefix="/api/v1")
+app.include_router(memory_router, prefix="/api/v1")
 app.include_router(research_router, prefix="/api/v1")
 app.include_router(knowledge_base_router,prefix="/api/v1",)
 app.include_router(documents_router, prefix="/api/v1",)
