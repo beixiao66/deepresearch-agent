@@ -21,6 +21,9 @@ DEFAULT_PREFERENCES = {
 
 _store: AsyncSqliteStore | None = None
 
+# 并发研究任务同时完成时，append 是读-改-写，需串行化避免丢条目
+_history_lock = asyncio.Lock()
+
 
 async def get_store() -> AsyncSqliteStore:
     """构建全局复用的长期记忆 Store（AsyncSqliteStore 单例）。"""
@@ -96,11 +99,12 @@ async def append_research_history(
         entry: dict,
         max_entries: int = 20,
 ) -> None:
-    history = await get_research_history(user_id)
-    history.append(entry)
-    store = await get_store()
-    await store.aput(
-        _history_namespace(user_id),
-        "research_history",
-        history[-max_entries:],
-    )
+    async with _history_lock:
+        history = await get_research_history(user_id)
+        history.append(entry)
+        store = await get_store()
+        await store.aput(
+            _history_namespace(user_id),
+            "research_history",
+            history[-max_entries:],
+        )
