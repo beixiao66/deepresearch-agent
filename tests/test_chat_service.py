@@ -3,9 +3,11 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import aiosqlite
+import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from openai import RateLimitError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.base import Base
@@ -85,6 +87,64 @@ def test_send_message_new_conversation_returns_id(
             conversations = await chat.list_conversations(session)
             assert conversations[0]["id"] == conversation_id
             assert conversations[0]["title"] == "什么是 RAG？"
+
+    asyncio.run(main())
+    asyncio.run(conn.close())
+
+
+def test_retry_after_failure_does_not_duplicate_question(
+        session_factory, tmp_path, monkeypatch,
+) -> None:
+    """上轮生成失败（以用户消息结尾）后重试，历史里问题只出现一次。"""
+    request = httpx.Request("POST", "https://model.example.com/chat")
+    rate_error = RateLimitError(
+        "Rate limit exceeded",
+        response=httpx.Response(status_code=429, request=request),
+        body=None,
+    )
+
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock(
+        side_effect=[rate_error, AIMessage(content="第二次回答")]
+    )
+    monkeypatch.setattr(
+        "app.services.chat_graph.get_llm",
+        lambda: mock_llm,
+    )
+
+    async def open_connection() -> AsyncSqliteSaver:
+        conn = await aiosqlite.connect(str(tmp_path / "checkpoints.db"))
+        saver = AsyncSqliteSaver(conn)
+        await saver.setup()
+        return saver
+
+    saver = asyncio.run(open_connection())
+    conn = saver.conn
+    monkeypatch.setattr(
+        "app.services.chat_graph.get_checkpointer",
+        AsyncMock(return_value=saver),
+    )
+
+    async def main() -> None:
+        async with session_factory() as session:
+            with pytest.raises(RateLimitError):
+                await chat.send_message("重试问题", None, session)
+
+            # 失败时会话记录已提交，重试用同一 id
+            conversations = await chat.list_conversations(session)
+            conversation_id = conversations[0]["id"]
+
+            answer, returned_id = await chat.send_message(
+                "重试问题", conversation_id, session
+            )
+            assert answer == "第二次回答"
+            assert returned_id == conversation_id
+
+            messages = await chat.get_conversation_messages(conversation_id)
+            assert messages == [
+                {"role": "user", "content": "重试问题"},
+                {"role": "assistant", "content": "第二次回答"},
+            ]
 
     asyncio.run(main())
     asyncio.run(conn.close())

@@ -3,7 +3,11 @@
 import logging
 from uuid import uuid4
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    RemoveMessage,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.conversation import ConversationRepository
@@ -40,9 +44,17 @@ async def send_message(
     await session.commit()
 
     graph = await get_chat_graph()
+    thread = {"configurable": {"thread_id": f"chat-{conversation_id}"}}
+    snapshot = await graph.aget_state(thread)
+    messages: list = [HumanMessage(content=question)]
+    last = (snapshot.values.get("messages") or [None])[-1]
+    if isinstance(last, HumanMessage) and last.id is not None:
+        # 上一轮以用户消息结尾 = 生成失败（成功轮以 AI 消息结尾），
+        # 重试时先删掉遗留问题，避免历史重复
+        messages.insert(0, RemoveMessage(id=last.id))
     result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=question)]},
-        config={"configurable": {"thread_id": f"chat-{conversation_id}"}},
+        {"messages": messages},
+        config=thread,
     )
     answer = str(result["messages"][-1].content)
     return answer, conversation_id

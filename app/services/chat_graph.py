@@ -67,7 +67,12 @@ async def _summarize_node(state: ChatState) -> dict:
     if total_tokens <= TOKEN_BOUNDARY:
         return {}
 
-    old_messages = messages[:-KEEP_RAW] or messages
+    # 消息不足 KEEP_RAW 条时也至少保留最新一条（当前问题）原文，
+    # 否则当前问题会被一起压缩进摘要，chat 节点无问题可答
+    if len(messages) <= KEEP_RAW:
+        old_messages = messages[:-1]
+    else:
+        old_messages = messages[:-KEEP_RAW]
     if not old_messages:
         return {}
 

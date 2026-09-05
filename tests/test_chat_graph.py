@@ -136,7 +136,7 @@ def test_summarize_node_compresses_old_messages(monkeypatch) -> None:
     assert "压缩" in prompt[-1].content
 
 
-def test_summarize_node_compresses_all_when_under_keep_raw(monkeypatch) -> None:
+def test_summarize_node_keeps_latest_when_under_keep_raw(monkeypatch) -> None:
     mock_llm = Mock()
     mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="大消息摘要"))
     monkeypatch.setattr(
@@ -148,7 +148,8 @@ def test_summarize_node_compresses_all_when_under_keep_raw(monkeypatch) -> None:
         1,  # 必然超阈值
     )
 
-    # 消息数不超过 KEEP_RAW 但总 token 超阈值：全部压缩，不留原文
+    # 消息数不超过 KEEP_RAW 但总 token 超阈值：
+    # 压缩老消息，但保留最新一条（当前问题）原文
     messages = [
         HumanMessage(content=f"很长的问题内容{i}", id=f"big-{i}")
         for i in range(3)
@@ -159,7 +160,7 @@ def test_summarize_node_compresses_all_when_under_keep_raw(monkeypatch) -> None:
     }))
 
     assert result["summary"] == "大消息摘要"
-    assert [r.id for r in result["messages"]] == ["big-0", "big-1", "big-2"]
+    assert [r.id for r in result["messages"]] == ["big-0", "big-1"]
 
 
 def test_chat_graph_returns_latest_message(monkeypatch, temp_checkpointer) -> None:
@@ -244,8 +245,8 @@ def test_chat_graph_summarize_removes_old_and_injects_summary(
     mock_llm = Mock()
     mock_llm.ainvoke = AsyncMock(
         side_effect=[
-            AIMessage(content="合并摘要"),  # 第一轮 summarize
-            AIMessage(content="答1"),      # 第一轮 chat
+            AIMessage(content="答1"),       # 第一轮 chat（单条消息超阈值但必须保留最新，摘要不触发）
+            AIMessage(content="合并摘要"),  # 第二轮 summarize
             AIMessage(content="答2"),      # 第二轮 chat
         ]
     )
