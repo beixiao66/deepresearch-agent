@@ -34,7 +34,11 @@ function scrollToBottom() {
 async function switchConversation(conversationId) {
   currentId.value = conversationId
   localStorage.setItem("chat_conversation_id", conversationId)
-  await loadMessages(conversationId)
+  try {
+    await loadMessages(conversationId)
+  } catch {
+    // 加载失败：api.js 全局对话框已提示，保持已切换的列表
+  }
 }
 
 function newChat() {
@@ -49,25 +53,38 @@ async function send() {
   if (!question || sending.value) return
 
   sending.value = true
+  const targetId = currentId.value
   try {
-    const result = await chatMessage(question, currentId.value)
+    const result = await chatMessage(question, targetId)
+    draft.value = ""
+    if (currentId.value !== targetId) {
+      // 请求期间已切换到其他会话：结果归属原会话（服务端已提交），
+      // 不污染当前列表；切回原会话时可从服务端恢复
+      return
+    }
     messages.value.push({ role: "user", content: question })
     messages.value.push({ role: "assistant", content: result.answer })
 
-    if (!currentId.value || result.conversation_id !== currentId.value) {
+    if (!targetId || result.conversation_id !== targetId) {
       currentId.value = result.conversation_id
       localStorage.setItem("chat_conversation_id", result.conversation_id)
     }
-    draft.value = ""
     await loadConversations()
     scrollToBottom()
+  } catch {
+    // 发送失败：api.js 全局对话框已提示，保留输入内容供重试
   } finally {
     sending.value = false
   }
 }
 
 onMounted(async () => {
-  await loadConversations()
+  try {
+    await loadConversations()
+  } catch {
+    // 后端不可用：全局对话框已提示，保持空列表
+    return
+  }
   if (currentId.value) {
     try {
       await loadMessages(currentId.value)
