@@ -24,6 +24,7 @@ class ConversationRepository:
         )
         self.session.add(conversation)
         await self.session.flush()
+        await self.session.refresh(conversation)
         return conversation
 
     async def get(
@@ -35,10 +36,11 @@ class ConversationRepository:
             conversation_id,
         )
 
-    async def touch(self, conversation_id: str) -> None:
+    async def touch(self, conversation_id: str) -> bool:
         conversation = await self.get(conversation_id)
         if conversation is not None:
             conversation.updated_at = datetime.now(timezone.utc)
+        return conversation is not None
 
     async def list_by_user(
             self,
@@ -47,7 +49,10 @@ class ConversationRepository:
         statement = (
             select(Conversation)
             .where(Conversation.user_id == user_id)
-            .order_by(Conversation.updated_at.desc())
+            .order_by(
+                Conversation.updated_at.desc(),
+                Conversation.created_at.desc(),
+            )
         )
         result = await self.session.execute(statement)
         return list(result.scalars().all())

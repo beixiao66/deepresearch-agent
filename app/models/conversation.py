@@ -11,7 +11,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[str] = mapped_column(
-        String(32),
+        String(64),  # 实际 id 形如 "conv-{uuid4().hex}"（37 字符），留足余量
         primary_key=True,
     )
 
