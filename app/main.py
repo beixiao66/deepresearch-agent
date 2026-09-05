@@ -14,6 +14,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.db.init_db import init_db
 from app.db.session import engine
+from app.services.memory_store import close_memory_store
 from app.services.research_graph import close_checkpointer
 
 
@@ -25,6 +26,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     await engine.dispose()
     await close_checkpointer()
+    await close_memory_store()
 
 
 configure_logging()

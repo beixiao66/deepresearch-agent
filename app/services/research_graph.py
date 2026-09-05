@@ -25,6 +25,11 @@ from app.services.llm import (
     generate_sub_answer,
     get_llm,
 )
+from app.services.memory_store import (
+    get_preferences,
+    get_research_history,
+    get_store,
+)
 from app.services.planner import generate_research_plan
 from app.services.qdrant_store import (
     QdrantStore,
@@ -129,6 +134,27 @@ async def _plan_research(state: ResearchState) -> dict:
         "stage": "plan",
         "message": "正在生成研究计划...",
     })
+    # 长期记忆：注入用户偏好与已研究主题（失败则无上下文继续）
+    user_context = None
+    try:
+        preferences = await get_preferences()
+        history = await get_research_history()
+        parts = []
+        if preferences:
+            parts.append(
+                f"用户偏好：{preferences.get('report_style', 'detailed')}报告、"
+                f"{preferences.get('report_language', 'zh')}语言"
+            )
+        if history:
+            recent = "、".join(
+                f"{item['topic']}({item['created_at'][:10]})"
+                for item in history[-5:]
+            )
+            parts.append(f"已研究过：{recent}")
+        if parts:
+            user_context = "；".join(parts)
+    except Exception as exc:
+        logger.warning("load memory context failed: %s", exc)
     plan_counters = {
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -137,6 +163,7 @@ async def _plan_research(state: ResearchState) -> dict:
     plan = await generate_research_plan(
         state["question"],
         plan_counters,
+        user_context=user_context,
     )
     _emit({
         "type": "status",
@@ -445,5 +472,6 @@ async def build_research_graph():
     # interrupt 需要 checkpoint 保存执行现场；AsyncSqliteSaver 持久化到
     # SQLite，进程重启后同一 thread_id 仍可暂停/恢复
     checkpointer = await get_checkpointer()
+    store = await get_store()
 
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile(checkpointer=checkpointer, store=store)

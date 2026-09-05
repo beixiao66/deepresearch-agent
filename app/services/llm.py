@@ -50,19 +50,30 @@ def _record_usage(counters: dict, response) -> None:
 async def generate_research_plan(
         topic: str,
         usage_counters: dict | None = None,
+        user_context: str | None = None,
 ) -> ResearchPlan:
-    """生成研究计划（结构化输出），返回 plan 并累加 token 用量。"""
+    """生成研究计划（结构化输出），返回 plan 并累加 token 用量。
+
+    user_context 为可选的长记忆上下文（用户偏好 + 已研究主题），
+    无则仅按主题生成。
+    """
+    system_content = (
+        "你是一名研究计划设计助手。"
+        "请将用户的研究主题拆分为可检索、可验证的子问题。"
+        "所有子问题和检索关键词都必须使用与研究主题相同的语言"
+        "（主题是中文就全部用中文，主题是英文就全部用英文），"
+        "不要混用语言，不要输出英文关键词。"
+        "不要回答研究问题本身，只生成研究计划。"
+    )
+    if user_context:
+        system_content += (
+            "\n\n参考以下用户偏好与研究背景（如与当前主题无关可忽略）：\n"
+            f"{user_context}\n"
+            "请据此生成更贴合用户的研究计划：遵循用户的报告风格与语言偏好；"
+            "避免与已研究主题重复，可衔接已有研究。"
+        )
     messages = [
-        SystemMessage(
-            content=(
-                "你是一名研究计划设计助手。"
-                "请将用户的研究主题拆分为可检索、可验证的子问题。"
-                "所有子问题和检索关键词都必须使用与研究主题相同的语言"
-                "（主题是中文就全部用中文，主题是英文就全部用英文），"
-                "不要混用语言，不要输出英文关键词。"
-                "不要回答研究问题本身，只生成研究计划。"
-            )
-        ),
+        SystemMessage(content=system_content),
         HumanMessage(content=f"研究主题：{topic}"),
     ]
 

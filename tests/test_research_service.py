@@ -33,7 +33,11 @@ def build_plan() -> ResearchPlan:
     )
 
 
-def test_build_research_graph_has_expected_structure() -> None:
+def test_build_research_graph_has_expected_structure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.research_graph.get_store",
+        AsyncMock(),
+    )
     graph = asyncio.run(build_research_graph())
     try:
         nodes = graph.get_graph().nodes
@@ -123,6 +127,18 @@ def test_research_graph_resumes_after_checkpointer_reopen(
     monkeypatch.setattr(
         "app.services.research_graph.AsyncSessionLocal",
         lambda: FakeSession(),
+    )
+    monkeypatch.setattr(
+        "app.services.research_graph.get_store",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "app.services.research_graph.get_preferences",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.services.research_graph.get_research_history",
+        AsyncMock(return_value=[]),
     )
 
     config = {"configurable": {"thread_id": thread_id}}
