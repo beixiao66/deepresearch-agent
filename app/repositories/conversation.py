@@ -42,6 +42,19 @@ class ConversationRepository:
             conversation.updated_at = datetime.now(timezone.utc)
         return conversation is not None
 
+    async def delete(self, conversation_id: str) -> bool:
+        """删除会话记录；不存在返回 False（与 touch 风格一致）。
+
+        只删元数据：checkpoint 里的消息历史由 chat_graph.delete_chat_thread
+        清理，两者职责分开。
+        """
+        conversation = await self.get(conversation_id)
+        if conversation is None:
+            return False
+        await self.session.delete(conversation)
+        await self.session.flush()
+        return True
+
     async def list_by_user(
             self,
             user_id: int = 1,

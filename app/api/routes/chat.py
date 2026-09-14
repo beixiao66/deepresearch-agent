@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from app.api.dependencies import DatabaseSession
 from app.core.config import get_settings
@@ -9,6 +9,7 @@ from app.schemas.chat import (
     ConversationSummary,
 )
 from app.services.chat import (
+    delete_conversation,
     get_conversation_messages,
     list_conversations,
     send_message,
@@ -56,3 +57,13 @@ async def read_conversation_messages(
         conversation_id=conversation_id,
         messages=messages,
     )
+
+
+@router.delete("/conversations/{conversation_id}", status_code=204)
+async def delete_chat_conversation(
+        conversation_id: str,
+        session: DatabaseSession,
+) -> Response:
+    """删除会话及其对话历史（checkpoint 线程）。"""
+    await delete_conversation(conversation_id, session)
+    return Response(status_code=204)

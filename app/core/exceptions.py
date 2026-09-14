@@ -87,6 +87,12 @@ class ResearchTaskInvalidStateError(Exception):
         )
 
 
+class ConversationNotFoundError(Exception):
+    def __init__(self, conversation_id: str) -> None:
+        self.conversation_id = conversation_id
+        super().__init__(f"对话会话不存在: {conversation_id}")
+
+
 MODEL_ERROR_MAPPINGS: list[tuple[type[Exception], ErrorMapping]] = [
     (
         AuthenticationError,
@@ -226,6 +232,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         ResearchTaskInvalidStateError,
         handle_research_task_invalid_state,
+    )
+    app.add_exception_handler(
+        ConversationNotFoundError,
+        handle_conversation_not_found,
     )
     app.add_exception_handler(
         RequestValidationError,
@@ -445,6 +455,29 @@ async def handle_document_not_found(
         error=ErrorDetail(
             code="DOCUMENT_NOT_FOUND",
             message="文档不存在",
+        )
+    )
+
+    return JSONResponse(
+        status_code=404,
+        content=error_response.model_dump(),
+    )
+
+
+async def handle_conversation_not_found(
+        request: Request,
+        exc: ConversationNotFoundError,
+) -> JSONResponse:
+    logger.info(
+        "对话会话不存在: id=%s, path=%s",
+        exc.conversation_id,
+        request.url.path,
+    )
+
+    error_response = ErrorResponse(
+        error=ErrorDetail(
+            code="CONVERSATION_NOT_FOUND",
+            message="会话不存在",
         )
     )
 

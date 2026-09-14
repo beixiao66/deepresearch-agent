@@ -72,3 +72,21 @@ def test_create_duplicate_id_raises(session_factory) -> None:
                 await repository.create("conv-a", title="重复")
 
     asyncio.run(main())
+
+
+def test_delete_removes_conversation(session_factory) -> None:
+    async def main() -> None:
+        async with session_factory() as session:
+            repository = ConversationRepository(session)
+            await repository.create("conv-a", title="要删的会话")
+            await session.commit()
+
+            assert await repository.delete("conv-a") is True
+            await session.commit()
+
+            assert await repository.get("conv-a") is None
+            assert await repository.list_by_user() == []
+            # 会话不存在时返回 False，不抛异常
+            assert await repository.delete("conv-missing") is False
+
+    asyncio.run(main())

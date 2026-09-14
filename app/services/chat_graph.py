@@ -97,6 +97,21 @@ async def _summarize_node(state: ChatState) -> dict:
     }
 
 
+def chat_thread_id(conversation_id: str) -> str:
+    """会话对应的 checkpoint 线程 id（读取、写入、删除共用同一约定）。"""
+    return f"chat-{conversation_id}"
+
+
+async def delete_chat_thread(conversation_id: str) -> None:
+    """删除会话的 checkpoint 历史（消息 + 摘要）。
+
+    线程命名约定属于本模块，因此删除也放在这里，调用方不必知道
+    thread_id 怎么拼。
+    """
+    checkpointer = await get_checkpointer()
+    await checkpointer.adelete_thread(chat_thread_id(conversation_id))
+
+
 async def build_chat_graph():
     graph = StateGraph(ChatState)
     graph.add_node("chat", _chat_node)

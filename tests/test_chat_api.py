@@ -206,3 +206,36 @@ def test_list_conversations_empty(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_delete_conversation_returns_204(monkeypatch) -> None:
+    mock_delete = AsyncMock()
+    monkeypatch.setattr(
+        "app.api.routes.chat.delete_conversation",
+        mock_delete,
+    )
+
+    response = client.delete("/api/v1/chat/conversations/abc123")
+
+    assert response.status_code == 204
+    # session 由依赖注入，只断言会话 id 透传
+    mock_delete.assert_awaited_once_with("abc123", ANY)
+
+
+def test_delete_missing_conversation_returns_404(monkeypatch) -> None:
+    from app.core.exceptions import ConversationNotFoundError
+
+    monkeypatch.setattr(
+        "app.api.routes.chat.delete_conversation",
+        AsyncMock(side_effect=ConversationNotFoundError("abc123")),
+    )
+
+    response = client.delete("/api/v1/chat/conversations/abc123")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "CONVERSATION_NOT_FOUND",
+            "message": "会话不存在",
+        }
+    }

@@ -195,3 +195,51 @@ def test_get_conversation_messages_restores_history(
 
     asyncio.run(main())
     asyncio.run(conn.close())
+
+
+def test_delete_conversation_clears_record_and_thread(
+        session_factory, tmp_path, monkeypatch,
+) -> None:
+    """删除会话要同时清掉 checkpoint 线程里的消息，不能只删元数据。"""
+    from app.services.chat_graph import get_chat_graph
+
+    _, conn = _build_test_graph(tmp_path, monkeypatch, ["答1"])
+
+    async def main() -> None:
+        async with session_factory() as session:
+            _, conversation_id = await chat.send_message(
+                "第一问", None, session
+            )
+
+            graph = await get_chat_graph()
+            thread = {
+                "configurable": {"thread_id": f"chat-{conversation_id}"}
+            }
+            before = await graph.aget_state(thread)
+            assert len(before.values.get("messages", [])) == 2
+
+            await chat.delete_conversation(conversation_id, session)
+
+            assert await chat.list_conversations(session) == []
+
+            after = await graph.aget_state(thread)
+            assert after.values.get("messages", []) == []
+
+    asyncio.run(main())
+    asyncio.run(conn.close())
+
+
+def test_delete_missing_conversation_raises(
+        session_factory, tmp_path, monkeypatch,
+) -> None:
+    from app.core.exceptions import ConversationNotFoundError
+
+    _, conn = _build_test_graph(tmp_path, monkeypatch, [])
+
+    async def main() -> None:
+        async with session_factory() as session:
+            with pytest.raises(ConversationNotFoundError):
+                await chat.delete_conversation("conv-missing", session)
+
+    asyncio.run(main())
+    asyncio.run(conn.close())

@@ -10,8 +10,13 @@ from langchain_core.messages import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import ConversationNotFoundError
 from app.repositories.conversation import ConversationRepository
-from app.services.chat_graph import get_chat_graph
+from app.services.chat_graph import (
+    chat_thread_id,
+    delete_chat_thread,
+    get_chat_graph,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +49,7 @@ async def send_message(
     await session.commit()
 
     graph = await get_chat_graph()
-    thread = {"configurable": {"thread_id": f"chat-{conversation_id}"}}
+    thread = {"configurable": {"thread_id": chat_thread_id(conversation_id)}}
     snapshot = await graph.aget_state(thread)
     messages: list = [HumanMessage(content=question)]
     last = (snapshot.values.get("messages") or [None])[-1]
@@ -80,7 +85,7 @@ async def get_conversation_messages(
 ) -> list[dict]:
     graph = await get_chat_graph()
     snapshot = await graph.aget_state(
-        {"configurable": {"thread_id": f"chat-{conversation_id}"}}
+        {"configurable": {"thread_id": chat_thread_id(conversation_id)}}
     )
     return [
         {
@@ -90,3 +95,30 @@ async def get_conversation_messages(
         for message in snapshot.values.get("messages", [])
         if isinstance(message, (HumanMessage, AIMessage))
     ]
+
+
+async def delete_conversation(
+        conversation_id: str,
+        session: AsyncSession,
+) -> None:
+    """删除会话：先清 checkpoint 线程（消息与摘要），再删会话元数据。
+
+    checkpoint 清理失败不阻断删除（记录删掉后该线程不会再被访问），
+    但记 warning 便于排查。会话不存在时抛 ConversationNotFoundError。
+    """
+    repository = ConversationRepository(session)
+
+    if await repository.get(conversation_id) is None:
+        raise ConversationNotFoundError(conversation_id)
+
+    try:
+        await delete_chat_thread(conversation_id)
+    except Exception as exc:
+        logger.warning(
+            "delete chat thread failed: conversation_id=%s, error=%s",
+            conversation_id,
+            exc,
+        )
+
+    await repository.delete(conversation_id)
+    await session.commit()
