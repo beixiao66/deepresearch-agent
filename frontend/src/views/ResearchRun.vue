@@ -44,7 +44,7 @@ function updateProgress(event) {
       plan: 25,
       review: 50,
       retrieve: 75,
-      report: 100,
+      report: 90,
     }
     if (event.stage && stageProgress[event.stage]) {
       const stageIndex = {
@@ -73,7 +73,7 @@ function updateProgress(event) {
     } else if (event.message.includes("联网搜索")) {
       progress.value = 75
     } else if (event.message.includes("生成研究报告")) {
-      progress.value = 100
+      progress.value = 90
     }
   }
 
@@ -198,19 +198,24 @@ onMounted(loadTask)
 
 <template>
   <div class="run-page">
-    <h2>研究执行</h2>
+    <header class="page-head">
+      <span class="eyebrow">RESEARCH RUN</span>
+      <h2 class="page-title">研究执行</h2>
+      <p v-if="task" class="page-subtitle">
+        任务 #{{ task.id }} · {{ task.topic }}
+      </p>
+    </header>
 
     <div v-if="task" class="status-line">
-      任务 #{{ task.id }}：{{ task.topic }}
       <span :class="['badge', task.status]">
         {{ statusLabel[task.status] || task.status }}
       </span>
     </div>
 
-    <div class="progress-panel">
+    <section class="panel progress-panel">
       <div class="progress-header">
         <strong>{{ currentMessage }}</strong>
-        <span>{{ progress }}%</span>
+        <span class="progress-value">{{ progress }}%</span>
       </div>
       <div class="progress-track">
         <div
@@ -235,25 +240,30 @@ onMounted(loadTask)
           <span>{{ step.label }}</span>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div v-if="awaitingApproval && plan" class="plan-box">
+    <section v-if="awaitingApproval && plan" class="panel plan-box">
       <h3>研究计划确认</h3>
       <p class="objective">{{ plan.objective }}</p>
 
-      <h4>子问题</h4>
-      <ul>
-        <li v-for="(q, i) in plan.sub_questions" :key="i">
-          {{ q }}
-        </li>
-      </ul>
-
-      <h4>检索关键词</h4>
-      <ul>
-        <li v-for="(q, i) in plan.search_queries" :key="i">
-          {{ q }}
-        </li>
-      </ul>
+      <div class="plan-grid">
+        <div>
+          <h4>子问题</h4>
+          <ul class="plan-list">
+            <li v-for="(q, i) in plan.sub_questions" :key="i">
+              {{ q }}
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h4>检索关键词</h4>
+          <ul class="plan-list tags">
+            <li v-for="(q, i) in plan.search_queries" :key="i">
+              {{ q }}
+            </li>
+          </ul>
+        </div>
+      </div>
 
       <div class="actions">
         <button
@@ -271,9 +281,12 @@ onMounted(loadTask)
           拒绝
         </button>
       </div>
-    </div>
+    </section>
 
-    <div class="events">
+    <section class="events">
+      <div class="events-head">
+        <span class="eyebrow">PROGRESS STREAM</span>
+      </div>
       <div
         v-for="(event, i) in events"
         :key="i"
@@ -287,147 +300,181 @@ onMounted(loadTask)
           任务已创建（#{{ event.task_id }}）
         </span>
         <span v-else-if="event.type === 'completed'">
-          研究完成！
+          研究完成，正在跳转报告页...
         </span>
         <span v-else>
           {{ event.message || event.type }}
         </span>
       </div>
-    </div>
+      <div v-if="!events.length" class="event empty">
+        <span>等待进度事件...</span>
+      </div>
+    </section>
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="error" class="error page-error">{{ error }}</p>
   </div>
 </template>
 
 <style scoped>
 .status-line {
-  margin-bottom: 16px;
-  font-size: 15px;
+  margin-bottom: 14px;
 }
-.badge {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  background: #eceff1;
-  color: #546e7a;
-}
+
 .progress-panel {
   margin-bottom: 16px;
-  padding: 16px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: #fff;
 }
 .progress-header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 10px;
-  color: #333;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+}
+.progress-value {
+  color: var(--accent);
+  font-family: var(--mono);
 }
 .progress-track {
-  height: 10px;
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: rgba(255, 255, 255, 0.07);
 }
 .progress-bar {
   height: 100%;
   border-radius: inherit;
-  background: #1976d2;
+  background: var(--accent);
   transition: width 0.4s ease;
 }
 .progress-bar.failed {
-  background: #d32f2f;
+  background: var(--danger);
 }
 .progress-steps {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 .progress-step {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  color: #9e9e9e;
+  color: var(--text-dim);
   font-size: 12px;
 }
 .progress-step.active,
 .progress-step.done {
-  color: #1976d2;
-  font-weight: 600;
+  color: var(--accent);
 }
 .step-dot {
-  width: 24px;
-  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
   border-radius: 50%;
-  background: #e5e7eb;
+  background: var(--bg-elevated);
+  font-family: var(--mono);
+  font-size: 11px;
 }
 .progress-step.active .step-dot,
 .progress-step.done .step-dot {
-  background: #1976d2;
-  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
 }
+
 .plan-box {
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 16px;
   margin-bottom: 16px;
 }
 .plan-box h3 {
-  margin-top: 0;
+  margin-bottom: 8px;
 }
 .objective {
-  color: #555;
+  color: var(--text-dim);
+  font-size: 13.5px;
+}
+.plan-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 16px 0 4px;
+}
+.plan-grid h4 {
+  margin-bottom: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.plan-list {
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.plan-list.tags {
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plan-list.tags li {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
 }
 .actions {
   display: flex;
   gap: 12px;
-  margin-top: 12px;
+  margin-top: 20px;
 }
-.primary {
-  padding: 10px 20px;
-  background: #1976d2;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.danger {
-  padding: 10px 20px;
-  background: #d32f2f;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.primary:disabled,
-.danger:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+
 .events {
-  background: #1a1a2e;
-  color: #4fc3f7;
-  border-radius: 8px;
-  padding: 16px;
-  font-family: monospace;
-  font-size: 13px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0d1117;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--text-dim);
+}
+.events-head {
+  margin-bottom: 8px;
 }
 .event {
-  padding: 4px 0;
+  display: flex;
+  gap: 8px;
+  overflow-wrap: anywhere;
 }
 .event-dot {
-  margin-right: 8px;
-  color: #4caf50;
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  margin-top: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  font-size: 0;
 }
-.error {
-  color: #c62828;
+.event.empty {
+  color: rgba(154, 163, 178, 0.6);
+}
+
+.page-error {
+  margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .plan-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

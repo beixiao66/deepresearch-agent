@@ -39,7 +39,8 @@ const { visible, message, closeErrorDialog } = useErrorDialog()
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(3, 5, 9, 0.62);
+  backdrop-filter: blur(2px);
 }
 .error-dialog {
   width: min(420px, 100%);
@@ -48,41 +49,38 @@ const { visible, message, closeErrorDialog } = useErrorDialog()
   grid-template-columns: auto 1fr;
   gap: 14px;
   padding: 20px;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
 }
 .dialog-icon {
-  width: 28px;
-  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: #ffebee;
-  color: #c62828;
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--danger);
   font-weight: 700;
 }
 .dialog-content h3 {
   margin: 1px 0 8px;
-  color: #1a1a1a;
-  font-size: 18px;
+  color: var(--text);
+  font-size: 16px;
 }
 .dialog-content p {
   margin: 0;
-  color: #555;
-  line-height: 1.6;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .error-dialog button {
   grid-column: 2;
   justify-self: end;
   min-width: 72px;
-  padding: 8px 18px;
-  border: 0;
-  border-radius: 6px;
-  background: #1976d2;
-  color: #fff;
-  cursor: pointer;
+  margin-top: 4px;
 }
 </style>

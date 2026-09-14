@@ -13,10 +13,13 @@ function getErrorMessage(body, fallback) {
   return fallback
 }
 
-async function throwRequestError(response, fallback) {
+async function throwRequestError(response, fallback, options = {}) {
   const body = await response.json().catch(() => ({}))
   const error = new Error(getErrorMessage(body, fallback))
-  showErrorDialog(error)
+  // 批量上传时逐个弹窗会刷屏，调用方可以传 silent 改为自己展示错误
+  if (!options.silent) {
+    showErrorDialog(error)
+  }
   throw error
 }
 
@@ -71,7 +74,7 @@ export async function listDocuments(knowledgeBaseId) {
   return response.json()
 }
 
-export async function uploadDocument(knowledgeBaseId, file) {
+export async function uploadDocument(knowledgeBaseId, file, options = {}) {
   const formData = new FormData()
   formData.append("file", file)
 
@@ -83,12 +86,14 @@ export async function uploadDocument(knowledgeBaseId, file) {
     )
   } catch {
     const error = new Error("无法连接服务器，请检查服务是否已启动")
-    showErrorDialog(error)
+    if (!options.silent) {
+      showErrorDialog(error)
+    }
     throw error
   }
 
   if (!response.ok) {
-    await throwRequestError(response, "上传失败")
+    await throwRequestError(response, "上传失败", options)
   }
 
   return response.json()
@@ -245,4 +250,10 @@ export async function getConversationMessages(conversationId) {
     `/chat/conversations/${conversationId}/messages`
   )
   return response.json()
+}
+
+export async function deleteConversation(conversationId) {
+  await request(`/chat/conversations/${conversationId}`, {
+    method: "DELETE",
+  })
 }

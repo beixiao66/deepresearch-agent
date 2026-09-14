@@ -25,97 +25,105 @@ onMounted(async () => {
 
 <template>
   <div class="tasks-page">
-    <h2>研究历史</h2>
+    <header class="page-head">
+      <span class="eyebrow">RESEARCH HISTORY</span>
+      <h2 class="page-title">研究历史</h2>
+      <p class="page-subtitle">所有研究任务、状态与报告入口</p>
+    </header>
 
     <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="!tasks.length && !error" class="hint">
-      暂无研究任务
-    </p>
 
-    <table v-if="tasks.length" class="task-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>主题</th>
-          <th>知识库</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="task in tasks" :key="task.id">
-          <td>{{ task.id }}</td>
-          <td>{{ task.topic }}</td>
-          <td>{{ task.knowledge_base_id }}</td>
-          <td>
-            <span :class="['badge', task.status]">
-              {{ statusLabel[task.status] || task.status }}
-            </span>
-          </td>
-          <td>
-            <router-link
-              v-if="task.status === 'awaiting_approval'"
-              :to="`/research/run/${task.id}`"
-            >
-              去确认
-            </router-link>
-            <router-link
-              v-else-if="task.status === 'completed'"
-              :to="`/research/report/${task.id}`"
-            >
-              看报告
-            </router-link>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <section v-if="tasks.length" class="panel table-panel">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>主题</th>
+            <th>知识库</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="task in tasks" :key="task.id">
+            <td class="task-id">#{{ task.id }}</td>
+            <td class="task-topic">{{ task.topic }}</td>
+            <td class="task-kb">{{ task.knowledge_base_id }}</td>
+            <td>
+              <span :class="['badge', task.status]">
+                {{ statusLabel[task.status] || task.status }}
+              </span>
+            </td>
+            <td>
+              <router-link
+                v-if="task.status === 'awaiting_approval'"
+                class="row-link"
+                :to="`/research/run/${task.id}`"
+              >
+                去确认
+              </router-link>
+              <router-link
+                v-else-if="task.status === 'completed'"
+                class="row-link"
+                :to="`/research/report/${task.id}`"
+              >
+                看报告
+              </router-link>
+              <span v-else class="task-none">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section v-else-if="!error" class="panel empty-state">
+      <p class="hint">暂无研究任务</p>
+      <router-link class="row-link" to="/research/create">
+        去创建第一个研究
+      </router-link>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.task-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 14px;
+.table-panel {
+  padding: 6px 8px;
 }
-.task-table th,
-.task-table td {
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid #eee;
+.task-id {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
 }
-.badge {
-  padding: 2px 8px;
-  border-radius: 10px;
+.task-topic {
+  overflow-wrap: anywhere;
+}
+.task-kb {
+  color: var(--text-dim);
+  font-family: var(--mono);
   font-size: 12px;
 }
-.badge.completed {
-  background: #e8f5e9;
-  color: #2e7d32;
+.task-none {
+  color: var(--text-dim);
 }
-.badge.cancelled {
-  background: #f5f5f5;
-  color: #616161;
+.row-link {
+  display: inline-block;
+  padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  font-size: 12.5px;
+  text-decoration: none;
+  transition: border-color 0.15s;
 }
-.badge.failed {
-  background: #ffebee;
-  color: #c62828;
+.row-link:hover {
+  border-color: var(--accent);
+  text-decoration: none;
 }
-.badge.awaiting_approval {
-  background: #fff3e0;
-  color: #e65100;
-}
-.badge.running {
-  background: #e3f2fd;
-  color: #1565c0;
-}
-.hint {
-  color: #999;
-}
-.error {
-  color: #c62828;
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 </style>

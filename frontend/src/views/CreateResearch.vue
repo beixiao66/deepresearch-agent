@@ -14,7 +14,6 @@ const file = ref(null)
 const running = ref(false)
 const error = ref("")
 const taskId = ref(null)
-const plan = ref(null)
 
 onMounted(async () => {
   try {
@@ -48,8 +47,6 @@ async function onCreate() {
 
   running.value = true
   try {
-    let receivedPlan = null
-
     await streamResearch(
       {
         topic: topic.value,
@@ -60,9 +57,6 @@ async function onCreate() {
       (event) => {
         if (event.type === "task_created") {
           taskId.value = event.task_id
-        }
-        if (event.type === "awaiting_approval") {
-          receivedPlan = true
         }
       }
     )
@@ -81,96 +75,115 @@ async function onCreate() {
 
 <template>
   <div class="create-page">
-    <h2>创建研究</h2>
+    <header class="page-head">
+      <span class="eyebrow">NEW RESEARCH</span>
+      <h2 class="page-title">创建研究</h2>
+      <p class="page-subtitle">
+        检索知识库 → 生成计划 → 确认后并行研究 → 输出带引用的报告
+      </p>
+    </header>
 
-    <div class="form">
-      <label>研究主题</label>
-      <textarea
-        v-model="topic"
-        rows="3"
-        placeholder="例如：什么是 RAG？它在企业知识库中的应用"
-      ></textarea>
+    <section class="panel form">
+      <div class="field">
+        <label for="topic">研究主题</label>
+        <textarea
+          id="topic"
+          v-model="topic"
+          rows="3"
+          placeholder="例如：什么是 RAG？它在企业知识库中的应用"
+        ></textarea>
+      </div>
 
-      <label>检索知识库</label>
-      <select v-model="knowledgeBaseId">
-        <option
-          v-for="kb in bases"
-          :key="kb.id"
-          :value="kb.id"
-        >
-          {{ kb.name }}
-        </option>
-      </select>
+      <div class="field">
+        <label for="kb">检索知识库</label>
+        <select id="kb" v-model="knowledgeBaseId">
+          <option
+            v-for="kb in bases"
+            :key="kb.id"
+            :value="kb.id"
+          >
+            {{ kb.name }}
+          </option>
+        </select>
+        <p v-if="!bases.length" class="hint">
+          还没有知识库，可先在「知识库」页创建
+        </p>
+      </div>
 
       <label class="check-row">
         <input type="checkbox" v-model="useWebSearch" />
-        知识库不足时允许联网搜索
+        <span>知识库不足时允许联网搜索（Tavily）</span>
       </label>
 
-      <label>或上传文件直接研究</label>
-      <input
-        type="file"
-        accept=".pdf,.md,.txt,.docx,.html,.htm,.xlsx,.pptx,.csv"
-        @change="onFileSelected"
-      />
-      <p v-if="file" class="file-hint">
-        已选择：{{ file.name }}（将自动创建临时知识库，研究完成后自动删除）
-      </p>
+      <div class="field">
+        <label for="file">或上传文件直接研究</label>
+        <input
+          id="file"
+          type="file"
+          accept=".pdf,.md,.txt,.docx,.html,.htm,.xlsx,.pptx,.csv"
+          @change="onFileSelected"
+        />
+        <p v-if="file" class="hint">
+          已选择：{{ file.name }}（自动创建临时知识库，研究完成后删除）
+        </p>
+      </div>
 
       <button
-        class="primary"
+        class="primary submit"
         :disabled="running"
         @click="onCreate"
       >
         {{ running ? "正在生成研究计划..." : "开始研究" }}
       </button>
 
+      <p class="hint note">
+        研究是一次性任务，报告生成后不能继续追问；需要追问请到「对话」页。
+      </p>
+
       <p v-if="error" class="error">{{ error }}</p>
-    </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .form {
-  max-width: 560px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
+  max-width: 620px;
 }
-label {
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.field label {
+  color: var(--text);
+  font-size: 13px;
   font-weight: 600;
-  font-size: 14px;
 }
-textarea,
-select {
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 14px;
+.field .hint {
+  font-size: 12px;
 }
+
 .check-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 400;
-}
-.file-hint {
-  font-size: 12px;
-  color: #777;
-}
-.primary {
-  padding: 12px;
-  background: #1976d2;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 15px;
+  font-size: 13px;
   cursor: pointer;
 }
-.primary:disabled {
-  opacity: 0.6;
+
+.submit {
+  margin-top: 4px;
+  padding: 12px;
+  font-size: 14px;
 }
-.error {
-  color: #c62828;
+
+.note {
+  font-size: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 </style>

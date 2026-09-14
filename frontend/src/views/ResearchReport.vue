@@ -1,28 +1,28 @@
 <script setup>
 import { onMounted, ref, computed } from "vue"
-import { useRoute } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
 import { marked } from "marked"
 import { listResearchTasks } from "../api"
 
 const route = useRoute()
+const router = useRouter()
 const taskId = route.params.taskId
 
 const task = ref(null)
 const error = ref("")
 
+const statusLabel = {
+  pending: "待处理",
+  running: "执行中",
+  awaiting_approval: "待确认",
+  completed: "已完成",
+  cancelled: "已取消",
+  failed: "失败",
+}
+
 const reportHtml = computed(() => {
   if (!task.value || !task.value.report) return ""
   return marked.parse(task.value.report)
-})
-
-const webSources = computed(() => {
-  if (!task.value || !task.value.plan) return []
-  try {
-    const plan = JSON.parse(task.value.plan)
-    return plan.search_queries || []
-  } catch {
-    return []
-  }
 })
 
 const tokenUsage = computed(() => {
@@ -86,6 +86,15 @@ const numberedSources = computed(() =>
   }))
 )
 
+// 研究是一次性任务，报告不能继续追问；带上主题跳到对话页继续
+function continueInChat() {
+  if (!task.value) return
+  router.push({
+    path: "/chat",
+    query: { topic: task.value.topic },
+  })
+}
+
 async function loadTask() {
   try {
     const tasks = await listResearchTasks()
@@ -104,16 +113,39 @@ onMounted(loadTask)
 
 <template>
   <div class="report-page">
-    <h2>研究报告</h2>
+    <header class="page-head">
+      <span class="eyebrow">RESEARCH REPORT</span>
+      <h2 class="page-title">研究报告</h2>
+      <p v-if="task" class="page-subtitle">
+        任务 #{{ task.id }} · 知识库 {{ task.knowledge_base_id }}
+      </p>
+    </header>
 
     <div v-if="task" class="meta">
-      <strong>{{ task.topic }}</strong>
+      <strong class="meta-topic">{{ task.topic }}</strong>
       <span :class="['badge', task.status]">
-        {{ task.status }}
+        {{ statusLabel[task.status] || task.status }}
       </span>
     </div>
 
     <p v-if="error" class="error">{{ error }}</p>
+
+    <div
+      v-if="task && task.report"
+      class="follow-up"
+    >
+      <div class="follow-up-body">
+        <strong>研究是一次性任务，不能就这份报告继续追问。</strong>
+        <p>
+          需要继续深挖，请带着问题到「对话」继续；
+          <em>对话不检索知识库</em>，回答基于模型自身知识与对话历史、没有引用来源。
+          需要新的、可追溯的依据，请重新发起一次研究。
+        </p>
+      </div>
+      <button class="primary follow-up-btn" @click="continueInChat">
+        带着主题去对话
+      </button>
+    </div>
 
     <div
       v-if="task && task.report"
@@ -123,22 +155,22 @@ onMounted(loadTask)
 
     <div v-if="task && !task.report && task.status !== 'failed'">
       <p class="hint">报告尚未生成，请先到执行页确认计划。</p>
-      <router-link :to="`/research/run/${taskId}`">
+      <router-link class="inline-link" :to="`/research/run/${taskId}`">
         前往执行页
       </router-link>
     </div>
 
-    <div v-if="task && task.status === 'cancelled'" class="cancelled-box">
+    <div v-if="task && task.status === 'cancelled'" class="panel state-box">
       <h3>研究已取消</h3>
-      <p>{{ task.error_message || "用户已取消此次研究任务" }}</p>
+      <p class="hint">{{ task.error_message || "用户已取消此次研究任务" }}</p>
     </div>
 
-    <div v-if="task && task.status === 'failed'" class="error-box">
+    <div v-if="task && task.status === 'failed'" class="panel state-box failed">
       <h3>研究失败</h3>
-      <p>{{ task.error_message }}</p>
+      <p class="hint">{{ task.error_message }}</p>
     </div>
 
-    <div v-if="numberedSources.length" class="sources">
+    <section v-if="numberedSources.length" class="panel sources">
       <h3>参考来源（{{ numberedSources.length }}）</h3>
       <ul class="source-list">
         <li v-for="item in numberedSources" :key="item.number" class="source-item">
@@ -168,9 +200,9 @@ onMounted(loadTask)
           </div>
         </li>
       </ul>
-    </div>
+    </section>
 
-    <div v-if="tokenStages.length" class="token-usage">
+    <section v-if="tokenStages.length" class="panel token-usage">
       <h3>Token 消耗统计</h3>
       <div class="token-summary">
         <div class="token-total">
@@ -209,131 +241,168 @@ onMounted(loadTask)
           </span>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .meta {
-  margin-bottom: 16px;
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
 }
-.badge {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  background: #eceff1;
-  color: #546e7a;
+.meta-topic {
+  font-size: 15px;
 }
-.sources {
-  margin-top: 24px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 16px;
+
+.follow-up {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 14px 18px;
+  border: 1px solid rgba(45, 212, 191, 0.25);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-dim);
 }
+.follow-up-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.follow-up-body strong {
+  color: var(--text);
+}
+.follow-up-body p {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.follow-up-body em {
+  color: var(--text);
+  font-style: normal;
+  font-weight: 600;
+}
+.follow-up-btn {
+  flex-shrink: 0;
+}
+
+.inline-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.state-box {
+  margin-top: 16px;
+}
+.state-box h3 {
+  margin-bottom: 6px;
+}
+.state-box.failed {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.sources,
+.token-usage {
+  margin-top: 20px;
+}
+.sources h3,
+.token-usage h3 {
+  margin-bottom: 12px;
+}
+
 .source-list {
-  list-style: none;
-  padding: 0;
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .source-item {
   display: flex;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid #f0f0f0;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
 }
 .source-item:last-child {
   border-bottom: none;
+  padding-bottom: 0;
 }
 .source-number {
   flex-shrink: 0;
-  font-weight: 700;
-  color: #1976d2;
+  color: var(--accent);
+  font-family: var(--mono);
   font-size: 13px;
+  font-weight: 700;
 }
 .source-body {
   min-width: 0;
 }
 .source-title {
+  color: var(--text);
+  font-size: 13.5px;
   font-weight: 600;
-  font-size: 14px;
-  color: #333;
   overflow-wrap: anywhere;
 }
-.source-title a {
-  color: #1976d2;
-  text-decoration: none;
-}
-.source-title a:hover {
-  text-decoration: underline;
-}
 .source-score {
-  font-size: 12px;
-  color: #999;
   margin-top: 2px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
 }
 .source-text {
-  font-size: 13px;
-  color: #555;
-  margin-top: 4px;
-  line-height: 1.6;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  margin-top: 6px;
   overflow: hidden;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.7;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
-.token-usage {
-  margin-top: 24px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 16px;
-}
-.token-usage h3 {
-  margin-top: 0;
-}
+
 .token-summary {
   display: flex;
-  gap: 32px;
-  margin-bottom: 12px;
+  gap: 36px;
+  margin-bottom: 14px;
 }
 .token-total {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 2px;
 }
 .token-num {
-  font-size: 22px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 20px;
   font-weight: 700;
-  color: #1976d2;
 }
 .token-label {
-  font-size: 12px;
-  color: #777;
+  color: var(--text-dim);
+  font-size: 11.5px;
 }
 .token-bar {
   display: flex;
-  height: 14px;
+  height: 10px;
   overflow: hidden;
   border-radius: 999px;
-  background: #f0f0f0;
+  background: rgba(255, 255, 255, 0.07);
 }
 .token-segment {
   height: 100%;
   transition: width 0.3s ease;
 }
 .seg-plan {
-  background: #1976d2;
+  background: var(--accent);
 }
 .seg-next_queries {
-  background: #7c4dff;
+  background: var(--info);
 }
 .seg-report {
-  background: #e65100;
+  background: var(--warn);
 }
 .token-stages {
   display: flex;
@@ -344,41 +413,30 @@ onMounted(loadTask)
 .token-stage {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 12.5px;
 }
 .stage-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 .stage-label {
-  font-weight: 600;
-  color: #333;
   width: 64px;
+  color: var(--text);
+  font-weight: 600;
 }
 .stage-value {
-  color: #777;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
 }
-.hint {
-  color: #999;
-}
-.error {
-  color: #c62828;
-}
-.cancelled-box {
-  background: #f5f5f5;
-  border: 1px solid #bdbdbd;
-  border-radius: 8px;
-  padding: 16px;
-  color: #424242;
-}
-.error-box {
-  background: #ffebee;
-  border: 1px solid #ef9a9a;
-  border-radius: 8px;
-  padding: 16px;
-  color: #c62828;
+
+@media (max-width: 720px) {
+  .follow-up {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>
 
@@ -386,56 +444,96 @@ onMounted(loadTask)
      必须用非 scoped 样式块覆盖 -->
 <style>
 .markdown {
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 24px;
-  line-height: 1.7;
+  padding: 24px 26px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin: 1.4em 0 0.6em;
+  color: var(--text);
+}
+.markdown > :first-child {
+  margin-top: 0;
 }
 .markdown h1 {
-  font-size: 26px;
-  margin-top: 1.2em;
+  font-size: 22px;
 }
 .markdown h2 {
-  font-size: 21px;
-  margin-top: 1.2em;
+  font-size: 18px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
 .markdown h3 {
-  font-size: 17px;
-  margin-top: 1.2em;
+  font-size: 15px;
 }
-.markdown pre {
-  background: #f5f5f5;
-  padding: 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-}
-.markdown table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 12px 0;
-}
-.markdown th,
-.markdown td {
-  border: 1px solid #ddd;
-  padding: 8px 12px;
-  text-align: left;
-}
-.markdown th {
-  background: #f8f8f8;
-  font-weight: 600;
-}
-.markdown blockquote {
-  border-left: 4px solid #e0e0e0;
-  margin: 12px 0;
-  padding: 4px 16px;
-  color: #666;
-}
-.markdown a {
-  color: #1976d2;
+.markdown p {
+  margin: 0 0 12px;
 }
 .markdown ul,
 .markdown ol {
-  padding-left: 24px;
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+.markdown li {
+  margin: 4px 0;
+}
+.markdown code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.markdown pre {
+  margin: 0 0 12px;
+  padding: 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0d1117;
+}
+.markdown pre code {
+  padding: 0;
+  background: none;
+  color: var(--text);
+}
+.markdown table {
+  width: 100%;
+  margin: 12px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.markdown th,
+.markdown td {
+  padding: 8px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+}
+.markdown th {
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.markdown blockquote {
+  margin: 12px 0;
+  padding: 4px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-dim);
+  color: var(--text-dim);
+}
+.markdown a {
+  color: var(--accent);
+}
+.markdown hr {
+  margin: 20px 0;
+  border: none;
+  border-top: 1px solid var(--border);
 }
 </style>
