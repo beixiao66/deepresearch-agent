@@ -135,3 +135,62 @@ def test_stream_start_research_emits_events() -> None:
             sse_module.start_research = original
 
     asyncio.run(run_test())
+
+
+def test_stream_start_research_pushes_progress_while_running() -> None:
+    """进度事件必须在后台任务结束前就下发。
+
+    修复前是 await 整个 start_research 跑完、再一次性读队列回放，
+    进度事件只能排在 task_created 之后。这里断言它排在前面，
+    以此证明事件是执行期间实时推出去的。
+    """
+    async def run_test() -> None:
+        from app.schemas.research import ResearchPlan
+        from app.schemas.research_report import ResearchReport, ResearchRequest
+
+        import app.services.sse as sse_module
+        from app.services.research_graph import _emit as emit
+
+        plan = ResearchPlan(
+            topic="RAG",
+            objective="研究 RAG",
+            sub_questions=["什么是 RAG？"],
+            search_queries=["RAG"],
+        )
+        report = ResearchReport(
+            topic="RAG",
+            plan=plan,
+            sources=[],
+            answer="",
+            task_id=7,
+        )
+
+        async def fake_start(request, task_repository):
+            emit({
+                "type": "status",
+                "stage": "plan",
+                "message": "正在生成研究计划...",
+            })
+            await asyncio.sleep(0.1)
+            return report
+
+        original = sse_module.start_research
+        sse_module.start_research = fake_start
+        try:
+            chunks = [
+                chunk
+                async for chunk in sse_module.stream_start_research(
+                    ResearchRequest(topic="RAG", knowledge_base_id=1),
+                    Mock(),
+                )
+            ]
+        finally:
+            sse_module.start_research = original
+
+        assert len(chunks) == 3
+        assert '"stage": "plan"' in chunks[0]
+        assert "正在生成研究计划" in chunks[0]
+        assert "task_created" in chunks[1]
+        assert "awaiting_approval" in chunks[2]
+
+    asyncio.run(run_test())

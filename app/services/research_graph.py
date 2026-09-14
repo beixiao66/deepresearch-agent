@@ -411,6 +411,23 @@ async def _report(state: ResearchState) -> dict:
         top_k=5,
     )
 
+    # 一条证据都没有时不能交给模型：它会用自己的知识作答并编造参考文献
+    if not curated_sources:
+        logger.info("report node: no sources, skip llm")
+        return {
+            "answer": (
+                "## 知识库暂无相关内容\n\n"
+                f"针对「{state['question']}」，当前知识库中没有检索到"
+                "可用于回答的资料，因此没有生成报告。\n\n"
+                "可能的原因：\n"
+                "- 知识库还没有上传文档，或文档仍在处理中\n"
+                "- 已上传的资料与研究主题不相关\n\n"
+                "可以在创建研究时勾选「知识库不足时允许联网搜索」，"
+                "或更换知识库后重新发起研究。"
+            ),
+            "curated_sources": [],
+        }
+
     sources_text = "\n".join(
         f"[{index}] {source['text']}"
         for index, source in enumerate(

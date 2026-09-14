@@ -9,9 +9,14 @@ logger = logging.getLogger(__name__)
 async def generate_research_plan(
         topic: str,
         usage_counters: dict | None = None,
+        user_context: str | None = None,
 ) -> ResearchPlan:
     """生成研究计划（委托给 llm.py，保证 token 用量被记录）。"""
-    plan = await _generate_plan(topic, usage_counters)
+    plan = await _generate_plan(
+        topic,
+        usage_counters,
+        user_context=user_context,
+    )
 
     logger.info(
         "Research plan generated: sub_questions=%d, search_queries=%d",

@@ -384,6 +384,39 @@ def test_report_without_sub_answers_does_not_call_llm(
     mock_llm.ainvoke.assert_not_awaited()
 
 
+def test_report_without_sources_does_not_call_llm(
+        monkeypatch,
+) -> None:
+    """空知识库：不能把没有证据的上下文交给模型。
+
+    模型会用自己的知识作答，还会编造参考文献（实测会输出
+    Lewis / Guu 等论文并带上 [1]-[6] 编号），必须短路返回。
+    """
+    mock_llm = Mock()
+    mock_llm.ainvoke = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.research_graph.get_llm",
+        lambda: mock_llm,
+    )
+
+    result = asyncio.run(
+        _report({
+            "question": "什么是 RAG？",
+            "sub_answers": [
+                {
+                    "question": "RAG 是什么？",
+                    "answer": "## 暂无足够资料\n\n当前知识库中没有检索到相关内容。",
+                    "sources": [],
+                }
+            ],
+        })
+    )
+
+    assert "暂无相关内容" in result["answer"]
+    assert result["curated_sources"] == []
+    mock_llm.ainvoke.assert_not_awaited()
+
+
 def test_researcher_without_evidence_returns_placeholder(
         monkeypatch,
 ) -> None:
