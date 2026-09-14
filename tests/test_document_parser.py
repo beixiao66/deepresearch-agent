@@ -73,3 +73,21 @@ def test_parse_unsupported_extension(tmp_path) -> None:
             str(document_path),
             ".exe",
         )
+
+
+def test_parse_text_document_with_bom(tmp_path) -> None:
+    """记事本「UTF-8 带 BOM」另存的 txt/md，首行不应残留 \\ufeff。"""
+    for extension in (".txt", ".md"):
+        document_path = tmp_path / f"bom{extension}"
+        document_path.write_text(
+            "第一行内容\n第二行内容",
+            encoding="utf-8-sig",
+        )
+
+        parsed = DocumentParser().parse(
+            str(document_path),
+            extension,
+        )
+
+        assert "\ufeff" not in parsed.text
+        assert parsed.text.startswith("第一行内容")

@@ -117,3 +117,21 @@ def test_parse_csv_document(tmp_path) -> None:
     assert "张三" in parsed.text
     assert "工程师" in parsed.text
     assert "李四" in parsed.text
+
+
+def test_parse_csv_document_with_bom(tmp_path) -> None:
+    """Excel 另存的 CSV 默认带 UTF-8 BOM，不能污染首列表头。"""
+    document_path = tmp_path / "bom.csv"
+    document_path.write_text(
+        "姓名,职位\n张三,工程师\n",
+        encoding="utf-8-sig",
+    )
+
+    parsed = DocumentParser().parse(
+        str(document_path),
+        ".csv",
+    )
+
+    assert "\ufeff" not in parsed.text
+    assert parsed.text.startswith("姓名 | 职位")
+    assert "张三 | 工程师" in parsed.text

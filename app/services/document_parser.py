@@ -52,7 +52,10 @@ class DocumentParser:
 
     @staticmethod
     def _parse_text(file_path: Path) -> ParsedDocument:
-        text = file_path.read_text(encoding="utf-8")
+        # utf-8-sig：无 BOM 时与 utf-8 完全等价，有 BOM 时自动吃掉。
+        # Windows 记事本「UTF-8 带 BOM」另存的文件很常见，用 utf-8 读会让
+        # 首行开头多出一个 \ufeff，污染检索与展示
+        text = file_path.read_text(encoding="utf-8-sig")
         return ParsedDocument(text=text)
 
     @staticmethod
@@ -110,7 +113,7 @@ class DocumentParser:
     def _parse_html(file_path: Path) -> ParsedDocument:
         """解析 HTML：去除脚本/样式/导航后提取正文文本。"""
         content = file_path.read_text(
-            encoding="utf-8",
+            encoding="utf-8-sig",
             errors="replace",
         )
         soup = BeautifulSoup(content, "lxml")
@@ -194,14 +197,18 @@ class DocumentParser:
 
     @staticmethod
     def _parse_csv(file_path: Path) -> ParsedDocument:
-        """解析 CSV：逐行读取，行内单元格用 | 连接。"""
+        """解析 CSV：逐行读取，行内单元格用 | 连接。
+
+        Excel 另存的 CSV 默认带 UTF-8 BOM，用 utf-8 读会让首列表头变成
+        "\ufeff方案"；utf-8-sig 对无 BOM 文件同样有效，因此统一使用。
+        """
         import csv
 
         parts: list[str] = []
 
         with file_path.open(
             "r",
-            encoding="utf-8",
+            encoding="utf-8-sig",
             newline="",
             errors="replace",
         ) as file:
