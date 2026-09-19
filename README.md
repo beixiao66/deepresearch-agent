@@ -18,14 +18,78 @@
 
 | 页面 | 截图 |
 |------|------|
-| 知识库管理（上传文档、状态展示） | ![知识库管理](docs/screenshots/kb-page.png) |
-| 创建研究（选择知识库 / 上传文件） | ![创建研究](docs/screenshots/create-research.png) |
-| 研究执行（计划确认 + SSE 进度） | ![研究执行](docs/screenshots/research-run.png) |
-| 研究报告（Markdown 渲染 + 参考来源 + Token 统计） | ![研究报告](docs/screenshots/report-page.png) |
+| 知识库管理（批量上传、处理状态与大小） | ![知识库管理](docs/screenshots/kb-page.png) |
+| 创建研究（选择知识库、按需开启联网） | ![创建研究](docs/screenshots/create-research.png) |
+| 研究执行（计划确认 + SSE 实时进度） | ![研究执行](docs/screenshots/research-run.png) |
+| 研究报告（Markdown 渲染 + 引用来源 + Token 统计） | ![研究报告](docs/screenshots/report-page.png) |
+| 对话（多轮记忆，不检索知识库） | ![对话](docs/screenshots/chat-page.png) |
 
 ## 架构
 
-![系统架构](docs/screenshots/架构图.png)
+```mermaid
+flowchart TB
+    subgraph client["前端 Vue 3"]
+        UI["知识库管理 · 创建研究 · 研究执行 · 研究报告 · 研究历史 · 对话"]
+    end
+
+    subgraph api["API 层 FastAPI"]
+        R1["knowledge-bases / documents"]
+        R2["search"]
+        R3["research（SSE 流）"]
+        R4["chat"]
+        R5["memory"]
+    end
+
+    subgraph orch["编排层 LangGraph"]
+        G1["研究图：plan → review → dispatch → researcher ×N → report"]
+        G2["对话图：summarize → chat"]
+    end
+
+    subgraph svc["服务层"]
+        S1["混合检索：向量 + BM25 → RRF → Rerank"]
+        S2["文档解析 / 切分 / 向量化"]
+    end
+
+    subgraph store["存储层"]
+        DB1["SQLite 业务表"]
+        DB2["SQLite FTS5 关键词索引"]
+        DB3["Qdrant 向量库"]
+        DB4["checkpoints.db 执行现场"]
+        DB5["memory.db 偏好与研究历史"]
+        DB6["上传文件存储"]
+    end
+
+    subgraph ext["外部服务"]
+        E1["阿里云百炼 qwen-plus / text-embedding-v4 / qwen3-rerank"]
+        E2["Tavily 联网搜索"]
+    end
+
+    client --> api
+    R1 --> S2
+    R2 --> S1
+    R3 --> G1
+    R4 --> G2
+    R1 --> DB1
+    R3 --> DB1
+    R5 --> DB5
+
+    S2 --> DB3
+    S2 --> DB2
+    S2 --> DB6
+
+    S1 --> DB3
+    S1 --> DB2
+    S1 --> E1
+
+    G1 --> S1
+    G1 --> E1
+    G1 --> E2
+    G1 -.-> DB4
+    G1 -.-> DB5
+
+    G2 --> E1
+    G2 -.-> DB4
+```
 
 **研究主流程（多 Agent）**：
 
